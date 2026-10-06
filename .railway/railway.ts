@@ -16,8 +16,8 @@ import { defineRailway, fn, github, postgres, preserve, project, redis, service 
 const REPOSITORY = "llinsss/Hha";
 
 export default defineRailway(() => {
-  const db = postgres("postgres");
-  const cache = redis("redis");
+  const db = postgres("db");
+  const cache = redis("cache");
 
   const webOrigin = "https://${{web.RAILWAY_PUBLIC_DOMAIN}}";
   // Shared by the API and its cron jobs: same image, same validated configuration.

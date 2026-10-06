@@ -84,7 +84,7 @@ npm run railway:apply       # create Postgres, Redis, api, web and the two cron 
 
 | Resource | What it is |
 | --- | --- |
-| `postgres`, `redis` | Railway databases |
+| `db` (PostgreSQL), `cache` (Redis) | Railway databases |
 | `api` | Built from `api/Dockerfile`. Runs migrations as a pre-deploy step, health check `/health/ready`, private networking only. |
 | `web` | Built from `web/Dockerfile`. `API_INTERNAL_URL` points at the API's private domain; health check `/management`. |
 | `expire-payment-holds` | Cron, `*/5 * * * *`, runs `node dist/scripts/run-job.js expire-payment-holds` |
