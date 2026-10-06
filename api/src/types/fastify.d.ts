@@ -4,6 +4,7 @@ import type { DataSource } from "typeorm";
 import type { AppConfig } from "../config/env.js";
 import type { Permission } from "../lib/permissions.js";
 import type { Principal, SessionService } from "../modules/auth/session.service.js";
+import type { EmailService } from "../modules/email/email.service.js";
 import type { PaymentProvider } from "../modules/payments/providers/index.js";
 import type { SettingsService } from "../modules/settings/settings.service.js";
 import type { IdempotencyOptions, IdempotencyState } from "../plugins/idempotency.js";
@@ -21,6 +22,8 @@ declare module "fastify" {
       /** The provider selected in settings, or null when online payment is off. */
       provider(): Promise<PaymentProvider | null>;
     };
+    /** Transactional email dispatcher (Resend). Emails are queued with `queueEmail` inside transactions. */
+    email: EmailService;
     metrics: AppMetrics;
     /** Verifies the bearer access token and loads `request.principal`. */
     authenticate: preHandlerAsyncHookHandler;

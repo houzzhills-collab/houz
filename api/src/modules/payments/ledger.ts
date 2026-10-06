@@ -1,6 +1,8 @@
 import type { Sql } from "../../db/sql.js";
 import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
+import { notifyGuestLatePayment, notifyGuestPayment, notifyGuestStay, notifyStayConfirmed } from "../email/notifications.js";
+import { queueAlert } from "../email/queue.js";
 import type { VerifiedTransaction } from "./providers/index.js";
 
 /**
@@ -67,6 +69,20 @@ export async function raiseException(tx: Sql, input: ExceptionInput): Promise<bo
     details: { kind: input.kind, providerReference: input.providerReference ?? null },
     outbox: { reference: input.providerReference ?? undefined },
   });
+  await queueAlert(tx, {
+    propertyId: input.propertyId,
+    template: "alert.payment_exception",
+    data: {
+      kind: input.kind,
+      reference: input.providerReference ?? null,
+      provider: input.provider ?? null,
+      expectedKobo: input.expectedAmountKobo === undefined || input.expectedAmountKobo === null ? null : String(input.expectedAmountKobo),
+      receivedKobo: input.receivedAmountKobo === undefined || input.receivedAmountKobo === null ? null : String(input.receivedAmountKobo),
+      at: new Date().toISOString(),
+    },
+    permission: "payments:confirm",
+    dedupeKey: `alert.payment_exception:${created.id}`,
+  });
   return true;
 }
 
@@ -114,6 +130,7 @@ export async function confirmHeldStayIfPaid(tx: Sql, reservationId: string, prop
     entityId: reservationId,
     outbox: { reference },
   });
+  await notifyStayConfirmed(tx, reservationId);
   return true;
 }
 
@@ -148,6 +165,7 @@ export async function expireLapsedHolds(tx: Sql, options: { roomId?: string; lim
       entityId: reservation.id,
       outbox: { reference: reservation.reference },
     });
+    await notifyGuestStay(tx, reservation.id, "guest.hold_expired");
   }
   return expired.length;
 }
@@ -282,6 +300,7 @@ export async function applyProviderTransaction(tx: Sql, transaction: VerifiedTra
     receivedAmountKobo: payment.amount_kobo,
     details: { reservationStatus: reservation.status },
   });
+  await notifyGuestLatePayment(tx, reservation.id, payment.id, payment.amount_kobo);
   return "settled_late";
 }
 
@@ -316,6 +335,7 @@ export async function confirmBankTransfer(
       details: { reservationId: payment.reservation_id, amountKobo: payment.amount_kobo, note: input.note },
       outbox: { type: "payment.settled", reference: payment.reference },
     });
+    await notifyGuestPayment(tx, input.paymentId);
     await resolveTransferException(tx, input, "payment_id");
     return;
   }

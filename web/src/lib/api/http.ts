@@ -3,6 +3,7 @@ import type {
   AvailableRoomType,
   CreatedPosOrder,
   Dashboard,
+  EmailLog,
   InventoryItem,
   LiveEvent,
   MenuItem,
@@ -337,6 +338,8 @@ export function createHttpClient(baseUrl: string): ApiClient {
       get: () => request<SettingsSnapshot>("GET", "/management/settings"),
       update: (changes) => request<SettingsSnapshot>("PATCH", "/management/settings", { body: { changes } }),
       verifyPayments: () => request<{ ok: true; provider: string }>("POST", "/management/settings/payments/verify"),
+      sendTestEmail: () => request<{ ok: true; to: string }>("POST", "/management/settings/email/test"),
+      emailLog: () => request<EmailLog>("GET", "/management/settings/email/messages?limit=25"),
     },
 
     events: { subscribe },

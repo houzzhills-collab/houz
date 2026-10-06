@@ -6,6 +6,7 @@ import { hasPermission, type Role } from "../../lib/permissions.js";
 import { recordEvent } from "../../lib/events.js";
 import { decodeCursor, toPage } from "../../lib/pagination.js";
 import type { Principal } from "../auth/session.service.js";
+import { alertTransferPending, notifyGuestPayment, notifyGuestStay } from "../email/notifications.js";
 import { confirmHeldStayIfPaid, expireLapsedHolds, refreshReservationPayment } from "../payments/ledger.js";
 import { OCCUPYING_STAY_SQL, insertGuest, staffReference, validateStay } from "../public/booking.service.js";
 
@@ -145,11 +146,19 @@ export async function createStaffReservation(
       details: { roomId: room.id, amountKobo: amount.toString(), source: "staff" },
       outbox: { reference },
     });
+    await notifyGuestStay(tx, created.id, "guest.booking_confirmed");
     return getReservation(tx, principal, created.id);
   });
 }
 
 type NextStatus = "checked_in" | "checked_out" | "cancelled" | "no_show";
+
+const GUEST_STATUS_EMAIL = {
+  checked_in: "guest.checked_in",
+  checked_out: "guest.checked_out",
+  cancelled: "guest.cancelled",
+  no_show: "guest.no_show",
+} as const satisfies Record<NextStatus, string>;
 
 const TRANSITIONS: Readonly<Record<string, readonly NextStatus[]>> = {
   confirmed: ["checked_in", "cancelled", "no_show"],
@@ -212,6 +221,7 @@ export async function changeReservationStatus(app: FastifyInstance, principal: P
       details: { from: reservation.status, to: next, reason: reason || null },
       outbox: { type: "reservation.status_changed", reference: reservation.reference },
     });
+    await notifyGuestStay(tx, id, GUEST_STATUS_EMAIL[next]);
     return { reservation: { id, status: next } };
   });
 }
@@ -274,6 +284,20 @@ export async function recordStaffPayment(
       details: { reservationId, amountKobo: input.amountKobo, method: input.method, paymentReference: input.paymentReference },
       outbox: { type: status === "pending" ? "payment.pending_confirmation" : "payment.settled", reference: reservation.reference },
     });
+    await notifyGuestPayment(tx, payment.id);
+    if (status === "pending") {
+      const guest = await tx.one<{ full_name: string }>(`SELECT g.full_name FROM reservations r JOIN guests g ON g.id = r.guest_id WHERE r.id = $1`, [reservationId]);
+      await alertTransferPending(tx, {
+        propertyId: principal.propertyId,
+        source: "accommodation",
+        entityId: payment.id,
+        reference: reservation.reference,
+        amountKobo: String(input.amountKobo),
+        senderReference: input.paymentReference,
+        recordedBy: principal.fullName,
+        guestName: guest.full_name,
+      });
+    }
     return { created: true, payment: { id: payment.id, duplicate: false, paid: paymentStatus === "paid", paymentStatus: status } };
   });
 }

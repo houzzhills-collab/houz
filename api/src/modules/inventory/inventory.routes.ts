@@ -7,6 +7,7 @@ import { NextCursor, PageQuery, decodeCursor, toPage } from "../../lib/paginatio
 import { KoboInput, KoboString, Nullable, Quantity, QuantityString, StringEnum, Text, Uuid, errorResponses, toQuantityText } from "../../lib/schemas.js";
 import { optionalText } from "../../lib/text.js";
 import { requirePrincipal } from "../auth/principal.js";
+import { alertLowStock } from "../email/notifications.js";
 
 const security = [{ bearerAuth: [] }];
 type InventoryRow = {
@@ -171,10 +172,11 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
       if (!reason.trim()) throw Errors.unprocessable("Give a reason for the movement", "VALIDATION_FAILED");
 
       return withTransaction(app.db, async (tx) => {
-        const updated = await tx.maybeOne<{ quantity: string; name: string }>(
+        const updated = await tx.maybeOne<{ quantity: string; name: string; unit: string; reorder_level: string; crossed_low: boolean }>(
           `UPDATE inventory_items SET quantity = quantity + $3::numeric
             WHERE id = $1 AND property_id = $2 AND active AND quantity + $3::numeric >= 0
-            RETURNING quantity::text, name`,
+            RETURNING quantity::text, name, unit, reorder_level::text,
+                      (quantity <= reorder_level AND quantity - $3::numeric > reorder_level) AS crossed_low`,
           [itemId, principal.propertyId, delta],
         );
         if (!updated) {
@@ -196,6 +198,10 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
           details: { quantityDelta: delta, reason: reason.trim() },
           outbox: { type: "inventory.stock_changed", reference: updated.name },
         });
+        if (updated.crossed_low) {
+          const cause = action === "wastage" ? "recorded wastage" : "a stock count adjustment";
+          await alertLowStock(tx, principal.propertyId, [{ name: updated.name, unit: updated.unit, quantity: updated.quantity, reorderLevel: updated.reorder_level }], cause);
+        }
         return { stock: { itemId, quantity: updated.quantity } };
       });
     },

@@ -6,6 +6,7 @@ import { sha256Hex } from "../../lib/crypto.js";
 import { AppError, Errors } from "../../lib/errors.js";
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from "../../lib/password.js";
 import { isRole } from "../../lib/permissions.js";
+import { queueEmail } from "../email/queue.js";
 import type { IssuedSession, Principal, SessionMeta } from "./session.service.js";
 
 export type LoginResult = Readonly<{ principal: Principal; accessToken: string; session: IssuedSession }>;
@@ -105,6 +106,15 @@ export class AuthService {
         details: { otherSessionsRevoked: revoked },
         outbox: false,
       });
+      // A first sign-in replacing a temporary password is expected; any later change gets a security notice.
+      if (!user.mustChangePassword) {
+        await queueEmail(tx, {
+          propertyId: user.propertyId,
+          template: "staff.password_changed",
+          to: { email: user.email, name: user.fullName, userId: user.id },
+          data: { fullName: user.fullName, email: user.email, at: new Date().toISOString() },
+        });
+      }
     });
     await this.app.sessions.refreshCache(principal.sessionId);
   }

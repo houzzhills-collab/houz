@@ -6,6 +6,7 @@ import { recordEvent } from "../../lib/events.js";
 import { decodeCursor, toPage } from "../../lib/pagination.js";
 import { hasPermission, type Role } from "../../lib/permissions.js";
 import { requirePrincipal } from "../auth/principal.js";
+import { queueAlert } from "../email/queue.js";
 import { CreateRoomsSchema, ListRoomsSchema, RoomHistorySchema, UpdateRoomSchema, type RoomStatus } from "./rooms.schemas.js";
 import { optionalText } from "../../lib/text.js";
 
@@ -158,6 +159,14 @@ const roomRoutes: FastifyPluginAsyncTypebox = async (app) => {
         details: { from: room.status, to: next, note },
         outbox: { reference: `Room ${room.room_number}` },
       });
+      if (next === "maintenance" || next === "out_of_order") {
+        await queueAlert(tx, {
+          propertyId: principal.propertyId,
+          template: "alert.room_out_of_service",
+          data: { roomNumber: room.room_number, status: next, note, changedBy: principal.fullName },
+          roles: ["owner", "manager", "front_desk"],
+        });
+      }
       return { id: request.params.id, status: next };
     });
   });

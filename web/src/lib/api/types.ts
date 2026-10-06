@@ -222,7 +222,7 @@ export type CreatedPosOrder = { id: string; receipt_number: string; payment_stat
 
 export type SettingView = {
   key: string;
-  group: "payments" | "booking";
+  group: "payments" | "booking" | "email";
   label: string;
   description: string;
   type: "string" | "enum" | "integer";
@@ -242,6 +242,23 @@ export type SettingView = {
 };
 export type SettingsSnapshot = { settings: SettingView[]; environment: { publicWebUrl: string | null; webhookUrl: string | null } };
 export type SettingsChanges = Record<string, string | number | null>;
+
+export type EmailStatus = "queued" | "sending" | "sent" | "failed" | "skipped";
+export type EmailLogEntry = {
+  id: string;
+  template: string;
+  audience: "guest" | "staff" | "management";
+  recipient: string;
+  /** Null until the message has been rendered for sending. */
+  subject: string | null;
+  status: EmailStatus;
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+};
+/** Recent deliveries, and counts by status over the last 7 days plus everything still queued. */
+export type EmailLog = { messages: EmailLogEntry[]; counts: Partial<Record<EmailStatus, number>> };
 
 // ---- Payment exceptions & register ----
 

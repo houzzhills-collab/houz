@@ -76,6 +76,9 @@ const EnvSchema = Type.Object({
   PAYSTACK_BASE_URL: Type.String({ default: "https://api.paystack.co", minLength: 1 }),
   FLUTTERWAVE_BASE_URL: Type.String({ default: "https://api.flutterwave.com", minLength: 1 }),
   PROVIDER_TIMEOUT_MS: Int(12_000, 1000, 60_000),
+  /** Resend API endpoint (override only for testing). The API key itself is an owner-managed setting. */
+  RESEND_BASE_URL: Type.String({ default: "https://api.resend.com", minLength: 1 }),
+  EMAIL_TIMEOUT_MS: Int(10_000, 1000, 60_000),
 
   /** Bearer secret for the scheduler-only job endpoints (/jobs/*). Jobs are disabled when unset. */
   CRON_SECRET: Type.Optional(Type.String({ minLength: 32 })),
@@ -130,6 +133,8 @@ export type AppConfig = Readonly<{
     paystackBaseUrl: string;
     flutterwaveBaseUrl: string;
   }>;
+  /** The Resend key, sender and notification switches live in owner-managed settings. */
+  email: Readonly<{ resendBaseUrl: string; timeoutMs: number }>;
   settingsEncryptionKey: Buffer;
   jobs: Readonly<{ cronSecret: string | null; reconciliationWindowHours: number }>;
   setupSecret: string | null;
@@ -195,6 +200,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   const publicWebUrl = env.PUBLIC_WEB_URL ? parseBaseUrl("PUBLIC_WEB_URL", env.PUBLIC_WEB_URL, isProduction, issues) : null;
   const paystackBaseUrl = parseBaseUrl("PAYSTACK_BASE_URL", env.PAYSTACK_BASE_URL, isProduction, issues);
   const flutterwaveBaseUrl = parseBaseUrl("FLUTTERWAVE_BASE_URL", env.FLUTTERWAVE_BASE_URL, isProduction, issues);
+  const resendBaseUrl = parseBaseUrl("RESEND_BASE_URL", env.RESEND_BASE_URL, isProduction, issues);
   const settingsEncryptionKey = Buffer.from(env.SETTINGS_ENCRYPTION_KEY, "base64");
   if (settingsEncryptionKey.length !== 32) issues.push("SETTINGS_ENCRYPTION_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)");
 
@@ -250,6 +256,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       publicBookingMax: env.PUBLIC_BOOKING_RATE_LIMIT_MAX,
     }),
     payments: Object.freeze({ publicWebUrl, timeoutMs: env.PROVIDER_TIMEOUT_MS, paystackBaseUrl, flutterwaveBaseUrl }),
+    email: Object.freeze({ resendBaseUrl, timeoutMs: env.EMAIL_TIMEOUT_MS }),
     settingsEncryptionKey,
     jobs: Object.freeze({ cronSecret: env.CRON_SECRET ?? null, reconciliationWindowHours: env.RECONCILIATION_WINDOW_HOURS }),
     setupSecret: env.SETUP_SECRET ?? null,

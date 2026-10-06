@@ -6,6 +6,7 @@ import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
 import { open, seal } from "../../lib/secret-box.js";
 import type { Principal } from "../auth/session.service.js";
+import { queueAlert } from "../email/queue.js";
 import {
   SETTINGS,
   definitionOf,
@@ -45,6 +46,18 @@ export type SettingView = {
 export type SettingsChange = Partial<Record<SettingKey, string | number | null>>;
 
 const VERSION_KEY = "settings:version";
+/** Non-secret settings whose change also triggers an owner security notice. */
+const SECURITY_RELEVANT = new Set<string>(["payments.provider", "email.provider", "email.from_address", "email.reply_to"]);
+
+/** A change as owners read it in the security notice. Secret values are never included. */
+function describeChange(key: SettingKey, value: string | number | null): string {
+  const definition = definitionOf(key);
+  if (!definition) return key;
+  if (definition.secret) return `${definition.label} ${value === null ? "removed" : "replaced"}`;
+  if (value === null) return `${definition.label} reset`;
+  const shown = definition.type === "enum" ? (definition.labels[String(value)] ?? String(value)) : String(value);
+  return `${definition.label} set to ${shown}`;
+}
 /** Without Redis, replicas converge within this window. */
 const CACHE_TTL_MS = 30_000;
 
@@ -129,7 +142,9 @@ export class SettingsService {
     await withTransaction(this.db, async (tx) => {
       const rows = await tx.rows<Row>(`SELECT key, value, is_secret, updated_at, updated_by FROM settings ORDER BY key FOR UPDATE`);
       const next = rows.map((row) => (stored.has(row.key as SettingKey) ? { ...row, value: stored.get(row.key as SettingKey) ?? null } : row));
-      this.assertConsistent(this.toSettings(next), environment, stored.has("payments.provider"));
+      const settings = this.toSettings(next);
+      this.assertPaymentsConsistent(settings, environment, stored.has("payments.provider"));
+      this.assertEmailConsistent(settings);
       for (const [key, value] of stored) {
         await tx.exec(`UPDATE settings SET value = $2, updated_at = now(), updated_by = $3 WHERE key = $1`, [key, value, principal.userId]);
       }
@@ -143,6 +158,15 @@ export class SettingsService {
         details: Object.fromEntries(entries.map(([key, value]) => [key, definitionOf(key)?.secret ? (value === null ? "cleared" : "replaced") : value])),
         outbox: false,
       });
+      const sensitive = entries.filter(([key]) => (definitionOf(key)?.secret ?? false) || SECURITY_RELEVANT.has(key)).map(([key, value]) => describeChange(key, value));
+      if (sensitive.length > 0) {
+        await queueAlert(tx, {
+          propertyId: principal.propertyId,
+          template: "alert.settings_changed",
+          data: { changes: sensitive, changedBy: principal.fullName, at: new Date().toISOString() },
+          roles: ["owner"],
+        });
+      }
     });
     this.cache = null;
     try {
@@ -152,7 +176,13 @@ export class SettingsService {
     }
   }
 
-  private assertConsistent(settings: GlobalSettings, environment: { publicWebUrl: string | null }, providerChanged: boolean): void {
+  private assertEmailConsistent(settings: GlobalSettings): void {
+    if (settings.email.provider === "resend" && (!settings.email.resendApiKey || !settings.email.from)) {
+      throw Errors.unprocessable("Add the Resend API key and sender address before turning email on", "EMAIL_NOT_CONFIGURED");
+    }
+  }
+
+  private assertPaymentsConsistent(settings: GlobalSettings, environment: { publicWebUrl: string | null }, providerChanged: boolean): void {
     if (settings.provider === "none") return;
     if (providerChanged && !environment.publicWebUrl) {
       throw Errors.unprocessable("Online payments need PUBLIC_WEB_URL to be configured on the server first", "PUBLIC_WEB_URL_MISSING");
@@ -207,6 +237,11 @@ export class SettingsService {
       const definition = definitionOf(key);
       return definition ? Number(this.decode(definition, byKey.get(key) ?? null)) : 0;
     };
+    const text = (key: SettingKey): string | null => byKey.get(key) ?? null;
+    const enabled = (key: SettingKey) => {
+      const definition = definitionOf(key);
+      return definition ? this.decode(definition, byKey.get(key) ?? null) === "on" : false;
+    };
     const provider = byKey.get("payments.provider");
     return Object.freeze({
       provider: (["paystack", "flutterwave"].includes(provider ?? "") ? provider : "none") as PaymentProviderName,
@@ -217,6 +252,15 @@ export class SettingsService {
       maxStayNights: integer("booking.max_stay_nights"),
       horizonDays: integer("booking.horizon_days"),
       bankTransferReviewHours: integer("payments.bank_transfer_review_hours"),
+      email: Object.freeze({
+        provider: byKey.get("email.provider") === "resend" ? "resend" : "none",
+        resendApiKey: secret("email.resend_api_key"),
+        from: text("email.from_address"),
+        replyTo: text("email.reply_to"),
+        guestNotifications: enabled("email.guest_notifications"),
+        staffNotifications: enabled("email.staff_notifications"),
+        managementAlerts: enabled("email.management_alerts"),
+      }),
     });
   }
 }

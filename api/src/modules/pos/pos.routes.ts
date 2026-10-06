@@ -5,6 +5,7 @@ import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
 import { decodeCursor, toPage } from "../../lib/pagination.js";
 import { requirePrincipal } from "../auth/principal.js";
+import { queueAlert } from "../email/queue.js";
 import { CreateOrderSchema, GetShiftSchema, OverviewSchema, ReceiptSchema, ShiftActionSchema } from "./pos.schemas.js";
 import { createOrder } from "./pos.service.js";
 import { optionalText } from "../../lib/text.js";
@@ -128,6 +129,22 @@ const posRoutes: FastifyPluginAsyncTypebox = async (app) => {
         details: { countedCashKobo: counted.toString(), expectedCashKobo: expected.toString(), varianceKobo: variance.toString(), tenders },
         outbox: { reference: principal.fullName },
       });
+      if (variance !== 0n) {
+        await queueAlert(tx, {
+          propertyId: principal.propertyId,
+          template: "alert.cash_variance",
+          data: {
+            cashier: principal.fullName,
+            openingFloatKobo: shift.opening_float_kobo,
+            expectedKobo: expected.toString(),
+            countedKobo: counted.toString(),
+            varianceKobo: variance.toString(),
+            closedAt: new Date().toISOString(),
+          },
+          roles: ["owner", "manager", "restaurant_manager"],
+          dedupeKey: `alert.cash_variance:${shift.id}`,
+        });
+      }
       return { id: shift.id, expectedCashKobo: expected.toString(), varianceKobo: variance.toString(), tenders };
     });
     return reply.status(200).send({ shift: closed });

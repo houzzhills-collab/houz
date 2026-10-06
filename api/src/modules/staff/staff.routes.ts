@@ -5,9 +5,10 @@ import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
 import { decodeCursor, toPage } from "../../lib/pagination.js";
 import { hashPassword } from "../../lib/password.js";
-import { hasPermission } from "../../lib/permissions.js";
+import { ROLE_LABELS, hasPermission } from "../../lib/permissions.js";
 import { requirePrincipal } from "../auth/principal.js";
 import type { Principal } from "../auth/session.service.js";
+import { queueEmail } from "../email/queue.js";
 import { CreateStaffSchema, ListStaffSchema, OWNER_MANAGED_ROLES, ResetPasswordSchema, UpdateStaffSchema } from "./staff.schemas.js";
 import { optionalText } from "../../lib/text.js";
 
@@ -115,6 +116,15 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
         details: { employeeNumber: fields.employeeNumber, role: body.role, passwordGenerated: generated !== null },
         outbox: { reference: fields.fullName },
       });
+      const temporaryPassword = generated ?? body.temporaryPassword;
+      await queueEmail(tx, {
+        propertyId: principal.propertyId,
+        template: "staff.welcome",
+        to: { email: body.email.trim().toLowerCase(), name: fields.fullName, userId: user.id },
+        data: { fullName: fields.fullName, email: body.email.trim().toLowerCase(), roleLabel: ROLE_LABELS[body.role], invitedBy: principal.fullName },
+        // The temporary password is sealed in the outbox and dropped once the email is sent.
+        sealed: temporaryPassword ? { key: app.config.settingsEncryptionKey, values: { temporaryPassword } } : undefined,
+      });
       return { id: profile.id, userId: user.id };
     });
     reply.header("cache-control", "no-store");
@@ -141,6 +151,15 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
         details: { status, sessionsRevoked },
         outbox: { reference: target.employee_number },
       });
+      if (target.user_id) {
+        const user = await tx.one<{ email: string; full_name: string }>(`SELECT email, full_name FROM users WHERE id = $1`, [target.user_id]);
+        await queueEmail(tx, {
+          propertyId: principal.propertyId,
+          template: "staff.status_changed",
+          to: { email: user.email, name: user.full_name, userId: target.user_id },
+          data: { fullName: user.full_name, status, changedBy: principal.fullName },
+        });
+      }
     });
     return { id: request.params.id, employmentStatus: status };
   });
@@ -155,7 +174,10 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
       await withTransaction(app.db, async (tx) => {
         const target = await lockManageableStaff(tx, principal, request.params.id);
         if (!target.user_id) throw Errors.conflict("This staff member has no sign-in account", "NO_ACCOUNT");
-        await tx.exec(`UPDATE users SET password_hash = $2, must_change_password = true WHERE id = $1`, [target.user_id, passwordHash]);
+        const user = await tx.one<{ email: string; full_name: string }>(
+          `UPDATE users SET password_hash = $2, must_change_password = true WHERE id = $1 RETURNING email, full_name`,
+          [target.user_id, passwordHash],
+        );
         await app.sessions.revokeAllForUser(tx.runner.manager, target.user_id, "password_reset");
         await recordEvent(tx, {
           propertyId: principal.propertyId,
@@ -164,6 +186,13 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
           entityType: "staff",
           entityId: request.params.id,
           outbox: false,
+        });
+        await queueEmail(tx, {
+          propertyId: principal.propertyId,
+          template: "staff.password_reset",
+          to: { email: user.email, name: user.full_name, userId: target.user_id },
+          data: { fullName: user.full_name, email: user.email, resetBy: principal.fullName },
+          sealed: { key: app.config.settingsEncryptionKey, values: { temporaryPassword } },
         });
       });
       reply.header("cache-control", "no-store");

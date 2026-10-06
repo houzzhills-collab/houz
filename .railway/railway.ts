@@ -5,7 +5,7 @@ import { defineRailway, fn, github, postgres, preserve, project, redis, service 
  *
  *   web  ── public domain; serves the UI and forwards /api/v1/* to the API privately
  *   api  ── private only; owns PostgreSQL and Redis, migrates before each deploy
- *   expire-payment-holds / reconcile-payments ── cron jobs from the API image
+ *   expire-payment-holds / reconcile-payments / daily-summary ── cron jobs from the API image
  *
  * The browser and the payment provider only ever reach the web service, so the
  * refresh cookie is first-party and the API has no public surface.
@@ -95,6 +95,8 @@ export default defineRailway(() => {
       job("expire-payment-holds", "expire-payment-holds", "*/5 * * * *"),
       // Applies provider settlements a webhook missed and queues stale transfers.
       job("reconcile-payments", "reconcile-payments", "17 * * * *"),
+      // Queues the owners' and managers' morning summary at 07:00 Africa/Lagos (cron runs in UTC); the API sends it.
+      job("daily-summary", "daily-summary", "0 6 * * *"),
     ],
   });
 });

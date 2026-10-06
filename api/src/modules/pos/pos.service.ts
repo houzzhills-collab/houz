@@ -5,6 +5,7 @@ import { businessToday } from "../../lib/dates.js";
 import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
 import type { Principal } from "../auth/session.service.js";
+import { alertLowStock, alertTransferPending, type StockLevel } from "../email/notifications.js";
 
 type OrderInput = {
   items: { menuItemId: string; quantity: number }[];
@@ -89,14 +90,19 @@ export async function createOrder(app: FastifyInstance, principal: Principal, in
        SELECT $1, * FROM unnest($2::uuid[], $3::text[], $4::int[], $5::bigint[], $6::bigint[])`,
       [order.id, lines.map((line) => line.id), lines.map((line) => line.name), lines.map((line) => line.quantity), lines.map((line) => line.price_kobo), lines.map((line) => line.lineTotal.toString())],
     );
+    let lowStock: StockLevel[] = [];
     if (stock.length > 0) {
       const ids = stock.map((row) => row.id);
       const needed = stock.map((row) => row.needed);
-      await tx.exec(
+      // Items this sale took to or below their reorder level (not ones already there).
+      const levels = await tx.rows<StockLevel & { crossed: boolean }>(
         `UPDATE inventory_items i SET quantity = i.quantity - u.needed
-           FROM unnest($1::uuid[], $2::numeric[]) AS u(id, needed) WHERE i.id = u.id`,
+           FROM unnest($1::uuid[], $2::numeric[]) AS u(id, needed) WHERE i.id = u.id
+         RETURNING i.name, i.unit, i.quantity::text AS quantity, i.reorder_level::text AS "reorderLevel",
+                   (i.quantity <= i.reorder_level AND i.quantity + u.needed > i.reorder_level) AS crossed`,
         [ids, needed],
       );
+      lowStock = levels.filter((level) => level.crossed).map(({ name, unit, quantity, reorderLevel }) => ({ name, unit, quantity, reorderLevel }));
       await tx.exec(
         `INSERT INTO stock_movements(property_id, item_id, movement_type, quantity_delta, reason, reference, recorded_by)
          SELECT $1, u.id, 'sale', -u.needed, $3, $4, $5 FROM unnest($2::uuid[], $6::numeric[]) AS u(id, needed)`,
@@ -131,7 +137,18 @@ export async function createOrder(app: FastifyInstance, principal: Principal, in
         details: { amountKobo: total.toString(), paymentReference: input.paymentReference },
         outbox: { type: "payment.pending_confirmation", reference: receipt },
       });
+      await alertTransferPending(tx, {
+        propertyId: principal.propertyId,
+        source: "restaurant",
+        entityId: order.id,
+        reference: receipt,
+        amountKobo: total.toString(),
+        senderReference: input.paymentReference,
+        recordedBy: principal.fullName,
+        guestName: null,
+      });
     }
+    await alertLowStock(tx, principal.propertyId, lowStock, `restaurant sale ${receipt}`);
     return {
       created: true,
       order: { id: order.id, receipt_number: receipt, total_kobo: total.toString(), payment_status: pending ? "pending" : "settled", duplicate: false },

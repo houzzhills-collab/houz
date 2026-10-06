@@ -77,7 +77,7 @@ npm run railway:check       # type-checks the infrastructure definition
 railway login
 railway init                # or: railway link (an existing project)
 npm run railway:plan        # preview
-npm run railway:apply       # create Postgres, Redis, api, web and the two cron jobs
+npm run railway:apply       # create Postgres, Redis, api, web and the three cron jobs
 ```
 
 `.railway/railway.ts` declares:
@@ -89,6 +89,7 @@ npm run railway:apply       # create Postgres, Redis, api, web and the two cron 
 | `web` | Built from `web/Dockerfile`. `API_INTERNAL_URL` points at the API's private domain; health check `/management`. |
 | `expire-payment-holds` | Cron, `*/5 * * * *`, runs `node dist/scripts/run-job.js expire-payment-holds` |
 | `reconcile-payments` | Cron, hourly, runs the reconciliation job |
+| `daily-summary` | Cron, `0 6 * * *` (07:00 Africa/Lagos), queues the owners' and managers' morning summary email |
 
 Change `REPOSITORY` in `.railway/railway.ts` if you deploy from a fork.
 

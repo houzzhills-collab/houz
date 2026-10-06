@@ -1,6 +1,6 @@
 # Houzz Hills API
 
-This is the backend service for Houzz Hills: authentication, bookings, payments, rooms, staff, attendance, restaurant POS, inventory, the payment register, and live updates. It implements the backend described in [`../docs/PRD.md`](../docs/PRD.md) §5–§10. The frontend in [`../web`](../web) uses it through `web/src/lib/api`.
+This is the backend service for Houzz Hills: authentication, bookings, payments, rooms, staff, attendance, restaurant POS, inventory, the payment register, live updates and transactional email. It implements the backend described in [`../docs/PRD.md`](../docs/PRD.md) §5–§10. The frontend in [`../web`](../web) uses it through `web/src/lib/api`.
 
 Stack: Fastify 5, TypeORM 1 (query runners, migrations), PostgreSQL 14+, Redis 6.2+, JWT access tokens with rotating refresh cookies, OpenAPI 3.1 and Prometheus metrics.
 
@@ -75,6 +75,8 @@ Everything is under `/api/v1` except the health probes, `/openapi.json`, `/docs`
 | `POST /webhooks/payments` | Provider signature | Paystack or Flutterwave payment events |
 | `POST /cron/expire-payment-holds` | Bearer `CRON_SECRET` | Release unpaid checkout holds |
 | `POST /cron/reconcile-payments` | Bearer `CRON_SECRET` | Settlement reconciliation and stale-transfer queue |
+| `POST /cron/daily-summary` | Bearer `CRON_SECRET` | Queue the morning summary email for owners and managers |
+| `POST /cron/send-emails` | Bearer `CRON_SECRET` | Deliver one batch of queued emails (the API also does this on its own) |
 | `GET /management/dashboard` | `dashboard:read` | Role-filtered property snapshot |
 | `GET /management/events` | Authenticated | Server-sent events (`Last-Event-ID` / `?cursor=` replay) |
 | `GET, POST /management/reservations` | `reservations:read` / `:write` | List (filters, pagination); staff booking |
@@ -89,7 +91,8 @@ Everything is under `/api/v1` except the health probes, `/openapi.json`, `/docs`
 | `GET /management/inventory`, `POST /…/items`, `POST /…/movements` | `inventory:read` / `:write` | Stock items and the movement ledger |
 | `GET, POST /management/menu`, `PATCH /…/{id}` | `pos:read` / `menu:write` | Menu, recipes, update and archive |
 | `GET, POST /management/pos`, `GET /…/{id}`, `GET, POST /…/shift` | `pos:read` / `:write` | Sales, receipts, cashier shifts |
-| `GET, PATCH /management/settings`, `POST /…/payments/verify` | `settings:manage` (owner only) | Global settings and payment provider keys |
+| `GET, PATCH /management/settings`, `POST /…/payments/verify` | `settings:manage` (owner only) | Global settings, payment provider and Resend keys |
+| `POST /management/settings/email/test`, `GET /…/email/messages` | `settings:manage` (owner only) | Send a test email to yourself; the email delivery log |
 
 Changes from the legacy paths in PRD §7:
 - Every path gains the `/api/v1` prefix.
@@ -115,12 +118,13 @@ In production the API refuses to start in any of these cases:
 | Database / Redis | `DATABASE_URL`, `DATABASE_SSL*`, `DATABASE_POOL_MAX`, `DATABASE_STATEMENT_TIMEOUT_MS`, `REDIS_URL`, `REDIS_KEY_PREFIX` |
 | Auth | `JWT_ACCESS_SECRET`, `JWT_*_TTL_*`, `COOKIE_DOMAIN`, `COOKIE_SECURE`, `COOKIE_SAME_SITE`, login limits |
 | Payments | `SETTINGS_ENCRYPTION_KEY` (encrypts provider keys stored in settings), `PUBLIC_WEB_URL`, provider base URLs and timeout |
+| Email | `RESEND_BASE_URL`, `EMAIL_TIMEOUT_MS` (the key and sender are owner settings; links in emails use `PUBLIC_WEB_URL`) |
 | Booking | `PUBLIC_BOOKING_RATE_LIMIT_MAX` |
 | Operations | `CRON_SECRET`, `RECONCILIATION_WINDOW_HOURS`, `SETUP_SECRET`, `METRICS_TOKEN` |
 
 ### Owner-managed settings
 
-The payment provider and its keys, and the booking rules, are **global settings** the owner changes from the web app's Settings page. They are not environment variables. Settings live in the `settings` table, seeded with defaults by a migration: online payments off, a 20-minute hold, 90-night maximum stay, 365-day horizon and a 48-hour transfer review window.
+The payment provider and its keys, email delivery and its Resend key, and the booking rules are **global settings** the owner changes from the web app's Settings page. They are not environment variables. Settings live in the `settings` table, seeded with defaults by migrations: online payments off, email off, a 20-minute hold, 90-night maximum stay, 365-day horizon and a 48-hour transfer review window.
 
 | Setting | Notes |
 | --- | --- |
@@ -128,6 +132,10 @@ The payment provider and its keys, and the booking rules, are **global settings*
 | `payments.paystack_secret_key` | Secret. Format-checked (`sk_test_…` / `sk_live_…`). Also verifies Paystack webhooks. |
 | `payments.flutterwave_secret_key`, `payments.flutterwave_webhook_hash` | Secrets |
 | `booking.hold_minutes`, `booking.max_stay_nights`, `booking.horizon_days`, `payments.bank_transfer_review_hours` | Integers, range-checked |
+| `email.provider` | `none` or `resend`. Can only be switched on once the Resend key and sender are saved. |
+| `email.resend_api_key` | Secret. Format-checked (`re_…`). A sending-only key is enough. |
+| `email.from_address`, `email.reply_to` | Sender (`bookings@domain` or `Name <bookings@domain>`, domain verified in Resend) and optional reply-to |
+| `email.guest_notifications`, `email.staff_notifications`, `email.management_alerts` | `on`/`off` switches per audience, all on by default |
 
 - **Owner only.** `GET`/`PATCH /api/v1/management/settings` and `POST /settings/payments/verify` require `settings:manage`, which only the owner role holds.
 - **Secrets are write-only.**
@@ -177,11 +185,12 @@ Each environment (dev, staging, production) needs its own database, Redis and pr
 **Refunds**
 - There is no refund operation anywhere. Resolving an exception records a person's decision and changes nothing else.
 
-**Jobs.** Run both on a schedule. A platform cron (Railway) runs the job script from the API image directly. Any other scheduler can call the HTTP endpoint with `Authorization: Bearer $CRON_SECRET`.
+**Jobs.** Run these on a schedule. A platform cron (Railway) runs the job script from the API image directly. Any other scheduler can call the HTTP endpoint with `Authorization: Bearer $CRON_SECRET`.
 
 | Endpoint | How often | What it does |
 | --- | --- | --- |
 | `node dist/scripts/run-job.js expire-payment-holds` or `POST /api/v1/cron/expire-payment-holds` | Every 2–5 minutes | Expires lapsed holds and fails their online payments. Availability already ignores lapsed holds, so a late run never oversells. |
+| `node dist/scripts/run-job.js daily-summary` or `POST /api/v1/cron/daily-summary` | Daily, about 07:00 Africa/Lagos | Queues the morning summary email for owners and managers. Re-running the same day queues nothing new. |
 | `node dist/scripts/run-job.js reconcile-payments` or `POST /api/v1/cron/reconcile-payments` | Hourly | Re-applies every successful provider transaction in the window through the same idempotent path as webhooks, so a missed webhook still settles. Also queues bank transfers still pending after the `payments.bank_transfer_review_hours` setting. |
 
 **Provider setup**
@@ -191,6 +200,45 @@ Each environment (dev, staging, production) needs its own database, Redis and pr
    - choose the provider
    - save, then click **Check saved key**
 3. Copy the webhook URL shown in Settings (`${PUBLIC_WEB_URL}/api/v1/webhooks/payments`) into the provider dashboard. The web app forwards it to the API with the raw body intact, so signatures verify.
+
+## How email works
+
+Emails use a **transactional outbox**: a service queues an email in `email_messages` inside the same transaction as the change it describes, so a rolled-back change never emails anyone and a committed one is never lost. A dispatcher in every API process then delivers due messages through Resend:
+
+- Messages are claimed with `FOR UPDATE SKIP LOCKED` under a 3-minute lease, so any number of replicas can run it.
+- Each message's id is sent as Resend's `Idempotency-Key`, so a crash or lease takeover never sends twice.
+- Network errors, 429 and 5xx are retried with backoff (30 s doubling to 1 hour, 8 attempts). Other rejections, such as an unverified domain, fail at once and show in the delivery log.
+- Sends are paced under Resend's default 2 requests per second.
+- While email is off, or an audience's switch is off, queued messages are marked `skipped`, not held. Messages not sent within 48 hours are skipped too, so turning email on never sends a backlog of stale notices.
+- Payloads (guest details, and temporary passwords, which are additionally sealed with `SETTINGS_ENCRYPTION_KEY`) are deleted once a message reaches a final state. The row stays as the delivery log.
+
+| Audience | Emails | Sent when |
+| --- | --- | --- |
+| Guests (when the booking has an email) | Booking confirmed | Staff booking created; website booking paid within its hold |
+| | Payment receipt / transfer being verified | Staff records cash, POS or transfer; owner confirms a transfer |
+| | Checked in, checked out, cancelled, no-show | Front desk changes the stay status |
+| | Booking not completed | A website checkout hold expires unpaid |
+| | Payment arrived after the hold | Provider settles money for a lapsed or cancelled hold |
+| Staff | Welcome with temporary password | Staff onboarded |
+| | Password reset with temporary password | Manager issues a temporary password |
+| | Password changed | A user changes a password they already chose |
+| | Account paused, closed or reactivated | Employment status changes |
+| Management | Payment exception | Any exception is queued (to `payments:confirm` holders) |
+| | Bank transfer to confirm | Reservation or restaurant transfer recorded (to `payments:confirm` holders) |
+| | New online booking | Website booking confirmed (owner, manager, front desk) |
+| | Low stock | A sale, wastage or count takes an item to or below its reorder level (to `inventory:write` holders) |
+| | Cash variance | A cashier shift closes with a variance (owner, manager, restaurant manager) |
+| | Room out of service | Room set to maintenance or out of order (owner, manager, front desk) |
+| | Daily summary | `daily-summary` job (owner, manager) |
+| | Security notice | Payment or email keys, providers or sender change (owners; cannot be switched off) |
+
+Templates live in `src/modules/email/templates.ts` and share one branded layout (`layout.ts`) that renders HTML and plain text, escaping all dynamic text.
+
+**Email setup**
+1. In Resend, verify your sending domain (add its SPF and DKIM records) and create an API key with sending access.
+2. As the owner, open **Settings → Email notifications**, paste the key, enter the sender (for example `Houzz Hills <bookings@houzzhills.com>`) and optionally a reply-to address, then save.
+3. Click **Send a test email to me**. Fix anything it reports, such as an unverified domain.
+4. Choose **Resend** under Delivery and save. Every email is listed in the delivery log below the settings.
 
 ## Security model
 
@@ -244,6 +292,7 @@ Each environment (dev, staging, production) needs its own database, Redis and pr
 | `CreateSettings` | Owner-managed global settings, seeded with defaults |
 | `CreateApiSessions` | Refresh-token sessions |
 | `BookingIntegrityAndPaymentExceptions` | Exclusion constraint, online-checkout columns, POS lifecycle, the exception queue, and indexes for every list path |
+| `CreateEmailMessages` | The email outbox and delivery log, and the email settings (off by default) |
 
 - Before applying `BookingIntegrityAndPaymentExceptions` to an existing database, resolve any genuinely overlapping active reservations; otherwise the migration stops with a constraint error.
 - Migrations run as a release step, never on boot. `synchronize` is permanently off.
@@ -264,6 +313,8 @@ Each environment (dev, staging, production) needs its own database, Redis and pr
 | `houzzhills_stale_payment_holds > 0` for 15 minutes | The hold-expiry scheduler is not running |
 | `rate(houzzhills_payment_webhooks_total{outcome=~"error\|invalid_signature"}[15m]) > 0` | Webhook processing is failing or being probed |
 | `houzzhills_open_payment_exceptions > 0` | People need to act on the exception queue |
+| `houzzhills_email_backlog > 0` | Emails are stuck: Resend is failing or rate-limiting, or no API replica is running |
+| `houzzhills_emails_failed_24h > 0` | Resend rejected emails; the delivery log in Settings shows why |
 | 5xx rate or p95 latency on `houzzhills_http_request_duration_seconds` | API errors or slowness |
 
 Logs are structured JSON with a `reqId` on every line. Clients can supply `X-Request-Id`, and every response echoes it.
@@ -284,12 +335,12 @@ Logs are structured JSON with a `reqId` on every line. Clients can supply `X-Req
 4. Sign in, open the payment register, and compare its totals with the source.
 5. Record how long the restore took.
 
-**Retention.** Audit and outbox rows grow without bound. Archive `outbox_events` older than 90 days and `provider_webhook_events` older than 1 year, once they are no longer needed for reconciliation.
+**Retention.** Audit and outbox rows grow without bound. Archive `outbox_events` older than 90 days and `provider_webhook_events` older than 1 year, once they are no longer needed for reconciliation. `email_messages` rows keep only the recipient, subject and status after delivery; delete those older than a year.
 
 ## Not implemented yet
 
 These are later scope in PRD §8 P1/P2, or decisions Houzz Hills still has to make:
-- guest and staff notifications (email, SMS or WhatsApp)
+- SMS or WhatsApp notifications (email is implemented)
 - MFA
 - deposits and partial online payment
 - folios and incidentals

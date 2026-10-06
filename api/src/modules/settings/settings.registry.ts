@@ -4,7 +4,7 @@
  * default, validation and whether it is a secret. Secrets are encrypted at
  * rest and never returned to any client.
  */
-export type SettingGroup = "payments" | "booking";
+export type SettingGroup = "payments" | "booking" | "email";
 
 type Base = { key: string; group: SettingGroup; label: string; description: string };
 export type StringSetting = Base & {
@@ -23,6 +23,14 @@ export type SettingDefinition = StringSetting | EnumSetting | IntegerSetting;
 
 export const PAYMENT_PROVIDERS = ["none", "paystack", "flutterwave"] as const;
 export type PaymentProviderName = (typeof PAYMENT_PROVIDERS)[number];
+
+export const EMAIL_PROVIDERS = ["none", "resend"] as const;
+export type EmailProviderName = (typeof EMAIL_PROVIDERS)[number];
+
+const SWITCH = { values: ["on", "off"] as const, labels: { on: "On", off: "Off" } };
+/** A bare address, or "Display Name <address>". */
+const MAILBOX = /^(?:[^\s<>@",;]+@[^\s<>@",;]+\.[A-Za-z]{2,}|[^<>@"\r\n,;]{1,80} <[^\s<>@",;]+@[^\s<>@",;]+\.[A-Za-z]{2,}>)$/;
+const ADDRESS = /^[^\s<>@",;]+@[^\s<>@",;]+\.[A-Za-z]{2,}$/;
 
 export const SETTINGS = [
   {
@@ -117,6 +125,84 @@ export const SETTINGS = [
     label: "Transfer review window (hours)",
     description: "Pending bank transfers older than this are queued as payment exceptions.",
   },
+  {
+    key: "email.provider",
+    group: "email",
+    type: "enum",
+    secret: false,
+    values: EMAIL_PROVIDERS,
+    labels: { none: "Off (no email)", resend: "Resend" },
+    default: "none",
+    label: "Email delivery",
+    description: "Sends booking confirmations, receipts, staff account emails and management alerts.",
+  },
+  {
+    key: "email.resend_api_key",
+    group: "email",
+    type: "string",
+    secret: true,
+    provider: "resend",
+    pattern: /^re_[A-Za-z0-9_]{8,}$/,
+    patternHint: "a Resend API key (re_…)",
+    minLength: 11,
+    maxLength: 200,
+    label: "Resend API key",
+    description: "resend.com → API Keys. Sending access is enough.",
+  },
+  {
+    key: "email.from_address",
+    group: "email",
+    type: "string",
+    secret: false,
+    pattern: MAILBOX,
+    patternHint: "an address such as bookings@houzzhills.com or Houzz Hills <bookings@houzzhills.com>",
+    minLength: 6,
+    maxLength: 200,
+    label: "Sender",
+    description: "Who emails come from. Its domain must be verified in Resend.",
+  },
+  {
+    key: "email.reply_to",
+    group: "email",
+    type: "string",
+    secret: false,
+    pattern: ADDRESS,
+    patternHint: "an email address",
+    minLength: 6,
+    maxLength: 200,
+    label: "Reply-to address",
+    description: "Where guest replies go, such as the front desk inbox. Optional.",
+  },
+  {
+    key: "email.guest_notifications",
+    group: "email",
+    type: "enum",
+    secret: false,
+    ...SWITCH,
+    default: "on",
+    label: "Guest emails",
+    description: "Booking confirmations, payment receipts, check-in, check-out and cancellation notices.",
+  },
+  {
+    key: "email.staff_notifications",
+    group: "email",
+    type: "enum",
+    secret: false,
+    ...SWITCH,
+    default: "on",
+    label: "Staff account emails",
+    description: "Welcome emails with temporary passwords, password resets and account security notices.",
+  },
+  {
+    key: "email.management_alerts",
+    group: "email",
+    type: "enum",
+    secret: false,
+    ...SWITCH,
+    default: "on",
+    label: "Management alerts",
+    description: "Payment exceptions, transfers to confirm, new online bookings, low stock, cash variances and the daily summary.",
+  },
 ] as const satisfies readonly SettingDefinition[];
 
 export type SettingKey = (typeof SETTINGS)[number]["key"];
@@ -137,4 +223,13 @@ export type GlobalSettings = Readonly<{
   maxStayNights: number;
   horizonDays: number;
   bankTransferReviewHours: number;
+  email: Readonly<{
+    provider: EmailProviderName;
+    resendApiKey: string | null;
+    from: string | null;
+    replyTo: string | null;
+    guestNotifications: boolean;
+    staffNotifications: boolean;
+    managementAlerts: boolean;
+  }>;
 }>;

@@ -126,6 +126,15 @@ body:has(.management-shell) > main,body:has(.management-auth-shell) > main { mar
 .webhook-url small { color:#a35f53;font-weight:400; }
 .verify-row { display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#5f6670;font-size:9px; }
 .settings-footer { display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;color:#969aa3; }
+.email-switches { display:flex;flex-direction:column;gap:9px;border:0;padding:0;margin:0; }
+.email-switches legend { color:#777c86;font-size:9px;font-weight:550;margin-bottom:6px; }
+.email-switch { display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid #eceef1;border-radius:6px;cursor:pointer; }
+.email-switch input { width:auto;margin-top:2px;accent-color:#b89449; }
+.email-switch strong,.email-switch small { display:block; }
+.email-switch strong { color:#4d525b;font-size:10px;font-weight:600; }
+.email-switch small { color:#969aa3;font-size:9px;line-height:1.5;margin-top:3px; }
+.email-log { margin-top:4px; }
+.email-log-note { max-width:260px;white-space:normal !important;line-height:1.45; }
 .pos-menu-tile { position:relative; }
 .pos-menu-tile .pos-menu-item { width:100%; }
 .pos-menu-tools { position:absolute;top:6px;right:6px;display:flex;gap:4px; }

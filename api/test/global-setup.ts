@@ -8,6 +8,8 @@ declare module "vitest" {
     setupDatabaseUrl: string | null;
     /** A migrated database of its own for global-settings tests, which change process-wide state. */
     settingsDatabaseUrl: string | null;
+    /** A migrated database of its own for email tests, which switch email delivery on and off. */
+    emailDatabaseUrl: string | null;
   }
 }
 
@@ -21,13 +23,14 @@ async function migrateFresh(url: string): Promise<DataSource> {
 
 /**
  * Integration tests need TEST_DATABASE_URL and TEST_REDIS_URL. That database and
- * its siblings `<name>_setup` and `<name>_settings` are wiped and migrated from
+ * its siblings `<name>_setup`, `<name>_settings` and `<name>_email` are wiped and migrated from
  * scratch once per run, so never point them at a database you care about.
  */
 export default async function setup(project: TestProject): Promise<void> {
   const url = process.env.TEST_DATABASE_URL;
   project.provide("setupDatabaseUrl", null);
   project.provide("settingsDatabaseUrl", null);
+  project.provide("emailDatabaseUrl", null);
   if (!url) {
     console.warn("TEST_DATABASE_URL/TEST_REDIS_URL not set: integration tests will be skipped.");
     return;
@@ -49,6 +52,7 @@ export default async function setup(project: TestProject): Promise<void> {
     };
     project.provide("setupDatabaseUrl", await isolated("setup"));
     project.provide("settingsDatabaseUrl", await isolated("settings"));
+    project.provide("emailDatabaseUrl", await isolated("email"));
   } finally {
     await main.destroy();
   }

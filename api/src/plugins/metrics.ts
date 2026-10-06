@@ -56,6 +56,29 @@ export default fp(
       },
     });
 
+    new Gauge({
+      name: "houzzhills_email_backlog",
+      help: "Emails queued for more than 10 minutes (delivery is stalled or Resend is failing)",
+      registers: [registry],
+      async collect() {
+        const row = await withConnection(app.db, (sql) =>
+          sql.one<{ count: number }>(`SELECT count(*)::int AS count FROM email_messages WHERE status IN ('queued', 'sending') AND created_at < now() - interval '10 minutes'`),
+        );
+        this.set(row.count);
+      },
+    });
+    new Gauge({
+      name: "houzzhills_emails_failed_24h",
+      help: "Emails that permanently failed in the last 24 hours",
+      registers: [registry],
+      async collect() {
+        const row = await withConnection(app.db, (sql) =>
+          sql.one<{ count: number }>(`SELECT count(*)::int AS count FROM email_messages WHERE status = 'failed' AND created_at > now() - interval '24 hours'`),
+        );
+        this.set(row.count);
+      },
+    });
+
     app.decorate("metrics", { webhookEvents });
     app.addHook("onResponse", async (request, reply) => {
       httpDuration.observe(

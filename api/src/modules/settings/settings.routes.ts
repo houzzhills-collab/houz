@@ -109,6 +109,68 @@ const settingsRoutes: FastifyPluginAsyncTypebox = async (app) => {
       return { ok: true as const, provider: provider.name };
     },
   );
+
+  app.post(
+    "/email/test",
+    {
+      preHandler: app.authorize("settings:manage"),
+      config: { rateLimit: { max: 5, timeWindow: 60_000 } },
+      schema: {
+        tags: ["settings"],
+        summary: "Send a test email to the signed-in owner",
+        description: "Uses the saved Resend key and sender, even while email delivery is still off, so the setup can be checked before switching it on.",
+        security,
+        response: { 200: Type.Object({ ok: Type.Literal(true), to: Type.String() }), ...errorResponses(401, 403, 409, 422, 502) },
+      },
+    },
+    async (request) => {
+      const result = await app.email.sendTest(requirePrincipal(request));
+      return { ok: true as const, to: result.to };
+    },
+  );
+
+  app.get(
+    "/email/messages",
+    {
+      preHandler: app.authorize("settings:manage"),
+      schema: {
+        tags: ["settings"],
+        summary: "Recent email deliveries (owner only)",
+        security,
+        querystring: Type.Object(
+          {
+            status: Type.Optional(StringEnum(["queued", "sending", "sent", "failed", "skipped"] as const)),
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })),
+          },
+          { additionalProperties: false },
+        ),
+        response: {
+          200: Type.Object({
+            messages: Type.Array(
+              Type.Object({
+                id: Type.String(),
+                template: Type.String(),
+                audience: Type.String(),
+                recipient: Type.String(),
+                subject: Nullable(Type.String()),
+                status: Type.String(),
+                attempts: Type.Integer(),
+                lastError: Nullable(Type.String()),
+                createdAt: Timestamp,
+                sentAt: Nullable(Timestamp),
+              }),
+            ),
+            counts: Type.Record(Type.String(), Type.Integer(), { description: "Messages by status over the last 7 days, plus everything still queued" }),
+          }),
+          ...errorResponses(401, 403, 422),
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("cache-control", "no-store");
+      return app.email.recent(requirePrincipal(request).propertyId, { status: request.query.status, limit: request.query.limit ?? 50 });
+    },
+  );
 };
 
 export default settingsRoutes;

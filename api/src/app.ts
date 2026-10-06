@@ -23,6 +23,7 @@ import staffRoutes from "./modules/staff/staff.routes.js";
 import webhookRoutes from "./modules/webhooks/webhooks.routes.js";
 import authPlugin from "./plugins/auth.js";
 import databasePlugin from "./plugins/database.js";
+import emailPlugin from "./plugins/email.js";
 import errorHandler from "./plugins/error-handler.js";
 import idempotencyPlugin from "./plugins/idempotency.js";
 import metricsPlugin from "./plugins/metrics.js";
@@ -107,6 +108,7 @@ export function buildApp(config: AppConfig) {
   void app.register(authPlugin);
   void app.register(idempotencyPlugin);
   void app.register(paymentsPlugin);
+  void app.register(emailPlugin);
   void app.register(metricsPlugin);
 
   void app.register(healthRoutes, { prefix: "/health" });

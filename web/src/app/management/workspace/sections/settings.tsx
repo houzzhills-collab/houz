@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CreditCard, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { api, errorMessage, type SettingView, type SettingsChanges, type SettingsSnapshot } from "@/lib/api";
+import { AlertTriangle, CreditCard, Mail, RefreshCw, Send, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { api, errorMessage, type EmailLogEntry, type SettingView, type SettingsChanges, type SettingsSnapshot } from "@/lib/api";
 import { dateTimeLabel } from "../format";
-import { Field, InlineError, useResource, type SectionProps } from "../ui";
+import { Empty, Field, InlineError, useResource, type SectionProps } from "../ui";
+
+const EMAIL_SWITCHES = ["email.guest_notifications", "email.staff_notifications", "email.management_alerts"];
 
 function SettingInput({ setting, value, onChange, clear, onClear }: { setting: SettingView; value: string; onChange: (value: string) => void; clear: boolean; onClear: (clear: boolean) => void }) {
   if (setting.secret) {
     return (
       <Field
         label={setting.label}
-        hint={!setting.readable ? "The saved value cannot be decrypted with the server's key. Enter it again." : setting.configured ? `Saved ${setting.hint ?? ""}. Leave blank to keep it.` : "Not set."}
+        hint={!setting.readable ? "The saved value cannot be decrypted with the server's key. Enter it again." : setting.configured ? `Saved ${setting.hint ?? ""}. Leave blank to keep it.` : `Not set. ${setting.description}`}
       >
         <input type="password" autoComplete="off" spellCheck={false} value={value} disabled={clear} onChange={(event) => onChange(event.target.value)} placeholder={setting.configured ? "Enter a new value to replace it" : "Paste the key"} />
         {setting.configured && (
@@ -29,31 +31,139 @@ function SettingInput({ setting, value, onChange, clear, onClear }: { setting: S
       </Field>
     );
   }
+  if (setting.type === "string") {
+    return (
+      <Field label={setting.label} hint={setting.description}>
+        <input type="text" autoComplete="off" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} placeholder={setting.key === "email.from_address" ? "Houzz Hills <bookings@yourdomain.com>" : "frontdesk@yourdomain.com"} />
+      </Field>
+    );
+  }
   return null;
+}
+
+function ProviderChoice({ legend, name, setting, value, onChange }: { legend: string; name: string; setting: SettingView | undefined; value: string; onChange: (value: string) => void }) {
+  return (
+    <fieldset className="provider-choice">
+      <legend>{legend}</legend>
+      {(setting?.options ?? []).map((option) => (
+        <label key={option.value} className={value === option.value ? "selected" : ""}>
+          <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} />
+          {option.label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+const STATUS_TONE: Record<EmailLogEntry["status"], string> = { sent: "status-green", queued: "status-blue", sending: "status-blue", skipped: "status-gold", failed: "status-red" };
+
+function EmailLogPanel({ version }: { version: number }) {
+  const [reloads, setReloads] = useState(0);
+  const log = useResource(() => api.settings.emailLog(), `${version}:${reloads}`);
+  const counts = log.data?.counts ?? {};
+  return (
+    <section className="panel bookings-panel full-panel email-log">
+      <div className="panel-heading bookings-heading">
+        <div>
+          <h2>
+            <Mail size={16} /> Email delivery log
+          </h2>
+          <p>
+            Last 7 days: {counts.sent ?? 0} sent · {counts.failed ?? 0} failed · {counts.skipped ?? 0} skipped
+            {(counts.queued ?? 0) + (counts.sending ?? 0) > 0 ? ` · ${(counts.queued ?? 0) + (counts.sending ?? 0)} waiting` : ""}
+          </p>
+        </div>
+        <button type="button" className="button-secondary" onClick={() => setReloads((current) => current + 1)}>
+          <RefreshCw size={14} /> Refresh
+        </button>
+      </div>
+      <InlineError message={log.error} />
+      {log.data && log.data.messages.length === 0 ? (
+        <Empty text="No emails yet. Confirmations, receipts and alerts appear here once email is on." />
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>SUBJECT</th>
+                <th>TO</th>
+                <th>QUEUED</th>
+                <th>STATUS</th>
+                <th>NOTE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(log.data?.messages ?? []).map((message) => (
+                <tr key={message.id}>
+                  <td>
+                    <strong className="payment-person">{message.subject ?? message.template}</strong>
+                    <small className="payment-unit">{message.audience === "management" ? "Management alert" : message.audience === "staff" ? "Staff account" : "Guest"}</small>
+                  </td>
+                  <td>{message.recipient}</td>
+                  <td>{dateTimeLabel(message.createdAt)}</td>
+                  <td>
+                    <span className={`status ${STATUS_TONE[message.status]}`}>
+                      <i />
+                      {message.status}
+                    </span>
+                  </td>
+                  <td className="email-log-note">{message.lastError ?? (message.attempts > 1 ? `Sent after ${message.attempts} attempts` : "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapshot; notify: SectionProps["notify"]; onSaved: () => void }) {
   const byKey = new Map(snapshot.settings.map((setting) => [setting.key, setting]));
   const providerSetting = byKey.get("payments.provider");
-  const providerOptions = providerSetting?.options ?? [];
-  const providerLabel = (value: string) => providerOptions.find((option) => option.value === value)?.label ?? value;
+  const emailProviderSetting = byKey.get("email.provider");
+  const providerLabel = (value: string) => providerSetting?.options?.find((option) => option.value === value)?.label ?? value;
   const initialProvider = String(providerSetting?.value ?? "none");
+  const initialEmailProvider = String(emailProviderSetting?.value ?? "none");
   const [provider, setProvider] = useState(initialProvider);
+  const [emailProvider, setEmailProvider] = useState(initialEmailProvider);
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(snapshot.settings.filter((setting) => setting.type === "integer").map((setting) => [setting.key, String(setting.value ?? setting.default ?? "")])),
+    Object.fromEntries(
+      snapshot.settings
+        .filter((setting) => setting.type === "integer" || (setting.type === "string" && !setting.secret))
+        .map((setting) => [setting.key, String(setting.value ?? setting.default ?? "")]),
+    ),
   );
+  const [switches, setSwitches] = useState<Record<string, string>>(() => Object.fromEntries(EMAIL_SWITCHES.map((key) => [key, String(byKey.get(key)?.value ?? "on")])));
   const [cleared, setCleared] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [verifyResult, setVerifyResult] = useState("");
+  const [testResult, setTestResult] = useState("");
+  const [testing, setTesting] = useState(false);
 
   const secrets = snapshot.settings.filter((setting) => setting.secret);
   const integers = snapshot.settings.filter((setting) => setting.type === "integer");
+  const texts = snapshot.settings.filter((setting) => setting.type === "string" && !setting.secret);
   const unreadable = secrets.filter((setting) => !setting.readable);
+  const resendKey = byKey.get("email.resend_api_key");
+  const emailReady = Boolean(resendKey?.configured && resendKey.readable && byKey.get("email.from_address")?.value);
+
+  const input = (setting: SettingView) => (
+    <SettingInput
+      key={setting.key}
+      setting={setting}
+      value={values[setting.key] ?? ""}
+      onChange={(value) => setValues((current) => ({ ...current, [setting.key]: value }))}
+      clear={Boolean(cleared[setting.key])}
+      onClear={(clear) => setCleared((current) => ({ ...current, [setting.key]: clear }))}
+    />
+  );
 
   const save = async () => {
     const changes: SettingsChanges = {};
     if (provider !== initialProvider) changes["payments.provider"] = provider;
+    if (emailProvider !== initialEmailProvider) changes["email.provider"] = emailProvider;
     for (const setting of secrets) {
       if (cleared[setting.key]) changes[setting.key] = null;
       else if (values[setting.key]?.trim()) changes[setting.key] = values[setting.key]!.trim();
@@ -61,6 +171,13 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
     for (const setting of integers) {
       const next = Number(values[setting.key]);
       if (next !== setting.value) changes[setting.key] = next;
+    }
+    for (const setting of texts) {
+      const next = values[setting.key]?.trim() ?? "";
+      if (next !== (setting.value ?? "")) changes[setting.key] = next === "" ? null : next;
+    }
+    for (const key of EMAIL_SWITCHES) {
+      if (switches[key] !== byKey.get(key)?.value) changes[key] = switches[key] ?? "on";
     }
     if (Object.keys(changes).length === 0) {
       notify("Nothing to save");
@@ -89,13 +206,26 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
     }
   };
 
+  const sendTest = async () => {
+    setTestResult("");
+    setTesting(true);
+    try {
+      const result = await api.settings.sendTestEmail();
+      setTestResult(`Sent to ${result.to}. Check your inbox.`);
+    } catch (caught) {
+      setTestResult(errorMessage(caught, "The test email could not be sent"));
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <>
       <InlineError message={error} onDismiss={() => setError("")} />
       {unreadable.length > 0 && (
         <div className="inline-error" role="alert">
           <span>
-            <AlertTriangle size={13} /> {unreadable.map((setting) => setting.label).join(", ")} cannot be decrypted. Re-enter {unreadable.length === 1 ? "it" : "them"} below; online payments stay off until then.
+            <AlertTriangle size={13} /> {unreadable.map((setting) => setting.label).join(", ")} cannot be decrypted. Re-enter {unreadable.length === 1 ? "it" : "them"} below; the related feature stays off until then.
           </span>
         </div>
       )}
@@ -109,28 +239,11 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
               <p>Hosted checkout for website bookings. Keys are encrypted on the server and never shown again.</p>
             </div>
           </div>
-          <fieldset className="provider-choice">
-            <legend>Provider</legend>
-            {providerOptions.map((option) => (
-              <label key={option.value} className={provider === option.value ? "selected" : ""}>
-                <input type="radio" name="provider" value={option.value} checked={provider === option.value} onChange={() => setProvider(option.value)} />
-                {option.label}
-              </label>
-            ))}
-          </fieldset>
+          <ProviderChoice legend="Provider" name="provider" setting={providerSetting} value={provider} onChange={setProvider} />
           {secrets
             // Credentials for the selected provider, plus any saved ones so they can be cleared.
-            .filter((setting) => setting.provider === provider || (setting.configured && setting.provider !== null))
-            .map((setting) => (
-              <SettingInput
-                key={setting.key}
-                setting={setting}
-                value={values[setting.key] ?? ""}
-                onChange={(value) => setValues((current) => ({ ...current, [setting.key]: value }))}
-                clear={Boolean(cleared[setting.key])}
-                onClear={(clear) => setCleared((current) => ({ ...current, [setting.key]: clear }))}
-              />
-            ))}
+            .filter((setting) => setting.group === "payments" && (setting.provider === provider || (setting.configured && setting.provider !== null)))
+            .map(input)}
           <div className="webhook-url">
             <span>Webhook URL for the provider dashboard</span>
             {snapshot.environment.webhookUrl ? (
@@ -158,21 +271,48 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
           <div className="panel-heading">
             <div>
               <h2>
+                <Mail size={16} /> Email notifications
+              </h2>
+              <p>Booking confirmations, receipts, staff account emails and management alerts, sent through Resend. The key is encrypted on the server and never shown again.</p>
+            </div>
+          </div>
+          <ProviderChoice legend="Delivery" name="email-provider" setting={emailProviderSetting} value={emailProvider} onChange={setEmailProvider} />
+          {resendKey && input(resendKey)}
+          {texts.filter((setting) => setting.group === "email").map(input)}
+          <fieldset className="email-switches">
+            <legend>What to send</legend>
+            {EMAIL_SWITCHES.map((key) => {
+              const setting = byKey.get(key);
+              if (!setting) return null;
+              return (
+                <label key={key} className="email-switch">
+                  <input type="checkbox" checked={switches[key] === "on"} onChange={(event) => setSwitches((current) => ({ ...current, [key]: event.target.checked ? "on" : "off" }))} />
+                  <span>
+                    <strong>{setting.label}</strong>
+                    <small>{setting.description}</small>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+          <div className="verify-row">
+            <button type="button" className="button-secondary" disabled={!emailReady || testing} onClick={() => void sendTest()} title={emailReady ? undefined : "Save the Resend API key and sender first"}>
+              <Send size={14} /> {testing ? "Sending…" : "Send a test email to me"}
+            </button>
+            {testResult ? <span>{testResult}</span> : !emailReady && <span>Save the key and sender, then send a test before turning email on.</span>}
+          </div>
+        </article>
+
+        <article className="panel settings-card">
+          <div className="panel-heading">
+            <div>
+              <h2>
                 <SlidersHorizontal size={16} /> Booking and payment rules
               </h2>
               <p>Apply to staff and website bookings immediately.</p>
             </div>
           </div>
-          {integers.map((setting) => (
-            <SettingInput
-              key={setting.key}
-              setting={setting}
-              value={values[setting.key] ?? ""}
-              onChange={(value) => setValues((current) => ({ ...current, [setting.key]: value }))}
-              clear={false}
-              onClear={() => undefined}
-            />
-          ))}
+          {integers.map(input)}
         </article>
       </section>
       <div className="settings-footer">
@@ -196,11 +336,9 @@ export function SettingsSection({ notify }: SectionProps) {
   const snapshot = useResource(() => api.settings.get(), String(version));
   if (!snapshot.data) return <InlineError message={snapshot.error} />;
   return (
-    <SettingsForm
-      key={version}
-      snapshot={snapshot.data}
-      notify={notify}
-      onSaved={() => setVersion((current) => current + 1)}
-    />
+    <>
+      <SettingsForm key={version} snapshot={snapshot.data} notify={notify} onSaved={() => setVersion((current) => current + 1)} />
+      <EmailLogPanel version={version} />
+    </>
   );
 }

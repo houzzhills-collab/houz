@@ -14,6 +14,7 @@ async function main(): Promise<void> {
 
   try {
     await app.listen({ host: config.host, port: config.port });
+    app.email.start();
   } catch (error) {
     app.log.fatal({ err: error }, "failed to start");
     await app.close().catch(() => undefined);

@@ -14,6 +14,7 @@ import type {
   PublicBookingInput,
   PublicPaymentStatus,
   RoomHistoryEntry,
+  EmailLog,
   SettingsChanges,
   SettingsSnapshot,
   LoginInput,
@@ -120,6 +121,9 @@ export interface ApiClient {
     get(): Promise<SettingsSnapshot>;
     update(changes: SettingsChanges): Promise<SettingsSnapshot>;
     verifyPayments(): Promise<{ provider: string }>;
+    /** Sends a test email to the signed-in owner with the saved Resend key and sender. */
+    sendTestEmail(): Promise<{ to: string }>;
+    emailLog(): Promise<EmailLog>;
   };
   events: {
     /** Live property updates; reconnects automatically. Returns a function that stops the stream. */

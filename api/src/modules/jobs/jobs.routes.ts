@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { sha256Hex } from "../../lib/crypto.js";
 import { Errors } from "../../lib/errors.js";
 import { errorResponses } from "../../lib/schemas.js";
+import { queueDailySummaries } from "./daily-summary.service.js";
 import { expireAllLapsedHolds } from "./holds.service.js";
 import { reconcilePayments } from "./reconciliation.service.js";
 
@@ -62,6 +63,39 @@ const jobRoutes: FastifyPluginAsyncTypebox = async (app) => {
       },
     },
     async () => reconcilePayments(app),
+  );
+
+  app.post(
+    "/daily-summary",
+    {
+      ...common,
+      schema: {
+        tags: ["jobs"],
+        summary: "Queue the daily summary email for owners and managers",
+        description: "Call once each morning (Africa/Lagos). Repeating it the same day queues nothing new.",
+        security: [{ schedulerToken: [] }],
+        response: { 200: Type.Object({ date: Type.String(), queued: Type.Integer() }), ...errorResponses(401, 429) },
+      },
+    },
+    async () => queueDailySummaries(app),
+  );
+
+  app.post(
+    "/send-emails",
+    {
+      ...common,
+      schema: {
+        tags: ["jobs"],
+        summary: "Deliver one batch of queued emails",
+        description: "The API delivers emails in the background on its own; this is only for draining the queue from a scheduler.",
+        security: [{ schedulerToken: [] }],
+        response: {
+          200: Type.Object({ sent: Type.Integer(), retrying: Type.Integer(), failed: Type.Integer(), skipped: Type.Integer() }),
+          ...errorResponses(401, 429),
+        },
+      },
+    },
+    async () => app.email.dispatchDue(),
   );
 };
 
