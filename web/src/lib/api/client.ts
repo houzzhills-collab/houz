@@ -132,6 +132,7 @@ export interface ApiClient {
   apartments: {
     /** Draft and published apartments, or only those with `status` (e.g. archived). */
     list(options?: { status?: ApartmentStatus }): Promise<Apartment[]>;
+    get(id: string): Promise<Apartment>;
     /** Created as a draft; upload photos, then publish. */
     create(input: ApartmentInput): Promise<Apartment>;
     /** Edit, publish, unpublish (`draft`) or archive. */

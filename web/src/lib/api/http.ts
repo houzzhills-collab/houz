@@ -342,6 +342,7 @@ export function createHttpClient(baseUrl: string): ApiClient {
 
     apartments: {
       list: (options) => listAll<"apartments", Apartment>("/management/apartments", "apartments", options?.status ? { status: options.status } : {}),
+      get: async (id) => (await request<{ apartment: Apartment }>("GET", `/management/apartments/${encodeURIComponent(id)}`)).apartment,
       create: async (input) => (await request<{ apartment: Apartment }>("POST", "/management/apartments", { body: input })).apartment,
       update: async (id, changes) => (await request<{ apartment: Apartment }>("PATCH", `/management/apartments/${encodeURIComponent(id)}`, { body: changes })).apartment,
       uploadImages(id, files, caption) {

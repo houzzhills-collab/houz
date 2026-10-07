@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, BedDouble, Building2, CalendarDays, Check, Clock3, Coffee, CreditCard, KeyRound, LayoutDashboard, LogOut, Menu, Settings2, Users, Utensils, X } from "lucide-react";
 import { api, errorMessage, type Permission, type Property, type Reference, type User } from "@/lib/api";
 import { applyProperty, initials, longDateLabel, optionLabel, propertyHour, text } from "./format";
-import { Field, Modal, useAction } from "./ui";
+import { Field, Modal, useAction, type SectionProps } from "./ui";
 import { ApartmentsSection } from "./sections/apartments";
 import { InventorySection } from "./sections/inventory";
 import { OverviewSection } from "./sections/overview";
@@ -104,7 +105,26 @@ function PasswordDialog({ required, onClose, onChanged }: { required: boolean; o
   );
 }
 
-export function Workspace() {
+/**
+ * A full page inside the workspace shell, for work too long for a drawer or
+ * modal (e.g. adding an apartment). `section` is highlighted in the sidebar.
+ */
+export type WorkspacePage = {
+  section: string;
+  title: string;
+  description: string;
+  /** Shown only to users with this permission. */
+  permission: Permission;
+  render: (props: SectionProps) => ReactNode;
+};
+
+/** The section to open, e.g. /management?section=Apartments after leaving a page. */
+function requestedSection(): string | null {
+  return typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("section");
+}
+
+export function Workspace({ page }: { page?: WorkspacePage } = {}) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
   const [reference, setReference] = useState<Reference | null>(null);
@@ -140,13 +160,15 @@ export function Workspace() {
       setReference(loadedReference);
     }
     setUser(signedIn);
-    setActive(NAVIGATION.find((item) => signedIn.permissions.includes(item.permission))?.label ?? "Overview");
+    const permitted = NAVIGATION.filter((item) => signedIn.permissions.includes(item.permission));
+    const requested = page?.section ?? requestedSection();
+    setActive(permitted.find((item) => item.label === requested)?.label ?? permitted[0]?.label ?? "Overview");
     setState("ready");
     if (!signedIn.mustChangePassword) {
       // Only staff with an attendance profile get a clock state; others see no clock control.
       setClockedIn((await api.attendance.self().catch(() => null))?.clockedIn ?? null);
     }
-  }, []);
+  }, [page?.section]);
 
   useEffect(() => {
     // The property is shown on the sign-in screen; it does not exist until setup is done.
@@ -268,8 +290,10 @@ export function Workspace() {
               key={label}
               className={current?.label === label ? "selected" : ""}
               onClick={() => {
-                setActive(label);
                 setMenuOpen(false);
+                // From a full page, go back to the workspace with that section open.
+                if (page) router.push(`/management?section=${encodeURIComponent(label)}`);
+                else setActive(label);
               }}
             >
               <Icon size={17} strokeWidth={1.8} />
@@ -307,7 +331,13 @@ export function Workspace() {
           <div className="breadcrumbs">
             <span>Workspace</span>
             <b>/</b>
-            <strong>{current?.label}</strong>
+            {page && (
+              <>
+                <Link href={`/management?section=${encodeURIComponent(page.section)}`}>{page.section}</Link>
+                <b>/</b>
+              </>
+            )}
+            <strong>{page ? page.title : current?.label}</strong>
           </div>
           <div className="topbar-actions">
             <div className={`live-indicator ${live ? "" : "is-offline"}`}>
@@ -329,19 +359,20 @@ export function Workspace() {
               <div className="eyebrow">
                 <span /> {longDateLabel().toUpperCase()} <span className="heading-dot">·</span> {property.name.toUpperCase()}
               </div>
-              <h1>{current?.label === "Overview" ? `Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}, ${user.fullName.split(" ")[0] ?? ""}` : current?.label}</h1>
-              <p>{current?.description}</p>
+              <h1>{page ? page.title : current?.label === "Overview" ? `Good ${hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening"}, ${user.fullName.split(" ")[0] ?? ""}` : current?.label}</h1>
+              <p>{page ? page.description : current?.description}</p>
             </div>
           </div>
-          {current?.label === "Overview" && <OverviewSection {...sectionProps} onOpen={setActive} />}
-          {current?.label === "Reservations" && <ReservationsSection {...sectionProps} />}
-          {current?.label === "Payments" && <PaymentsSection {...sectionProps} />}
-          {current?.label === "Apartments" && <ApartmentsSection {...sectionProps} />}
-          {current?.label === "Rooms" && <RoomsSection {...sectionProps} />}
-          {current?.label === "Restaurant POS" && <PosSection {...sectionProps} />}
-          {current?.label === "Inventory" && <InventorySection {...sectionProps} />}
-          {current?.label === "Team & attendance" && <TeamSection {...sectionProps} clockedIn={clockedIn} onClock={() => void clock()} />}
-          {current?.label === "Settings" && <SettingsSection {...sectionProps} />}
+          {page && (user.permissions.includes(page.permission) ? page.render(sectionProps) : <div className="empty-state">You don&apos;t have access to this page.</div>)}
+          {!page && current?.label === "Overview" && <OverviewSection {...sectionProps} onOpen={setActive} />}
+          {!page && current?.label === "Reservations" && <ReservationsSection {...sectionProps} />}
+          {!page && current?.label === "Payments" && <PaymentsSection {...sectionProps} />}
+          {!page && current?.label === "Apartments" && <ApartmentsSection {...sectionProps} />}
+          {!page && current?.label === "Rooms" && <RoomsSection {...sectionProps} />}
+          {!page && current?.label === "Restaurant POS" && <PosSection {...sectionProps} />}
+          {!page && current?.label === "Inventory" && <InventorySection {...sectionProps} />}
+          {!page && current?.label === "Team & attendance" && <TeamSection {...sectionProps} clockedIn={clockedIn} onClock={() => void clock()} />}
+          {!page && current?.label === "Settings" && <SettingsSection {...sectionProps} />}
           <footer className="management-footer">
             <span>
               © {new Date().getFullYear()} {property.name}

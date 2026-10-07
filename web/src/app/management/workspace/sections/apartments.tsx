@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Archive, ArrowLeft, ArrowRight, ExternalLink, Eye, EyeOff, ImagePlus, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
-import { api, apiAssetUrl, errorMessage, type Apartment, type ApartmentInput, type ApartmentStatus, type Reference } from "@/lib/api";
-import { dateLabel, money, optionLabel, text, toKobo } from "../format";
-import { DetailList, Drawer, Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
+import { api, apiAssetUrl, errorMessage, type Apartment, type ApartmentStatus, type Reference } from "@/lib/api";
+import { dateLabel, money, optionLabel } from "../format";
+import { DetailList, Drawer, Empty, InlineError, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
 
 const STATUS: Record<ApartmentStatus, { label: string; tone: string }> = {
   published: { label: "Published", tone: "status-green" },
@@ -13,7 +14,7 @@ const STATUS: Record<ApartmentStatus, { label: string; tone: string }> = {
   archived: { label: "Archived", tone: "status-red" },
 };
 
-function StatusPill({ status }: { status: ApartmentStatus }) {
+export function StatusPill({ status }: { status: ApartmentStatus }) {
   return (
     <span className={`status ${STATUS[status].tone}`}>
       <i />
@@ -23,197 +24,9 @@ function StatusPill({ status }: { status: ApartmentStatus }) {
 }
 
 const cover = (apartment: Apartment) => apartment.images.find((image) => image.isCover) ?? apartment.images[0] ?? null;
-/** One entry per line or comma, blanks dropped. */
-const labels = (value: FormDataEntryValue | null) =>
-  String(value ?? "")
-    .split(/[\n,]/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-/** Create (as a draft) or edit an apartment listing. */
-function ApartmentForm({ apartment, notify, onClose, onSaved }: { apartment: Apartment | null; notify: Notify; onClose: () => void; onSaved: (saved: Apartment) => void }) {
-  const action = useAction();
-  const a = apartment;
-  return (
-    <Modal
-      title={a ? `Edit ${a.name}` : "Add an apartment"}
-      description={a ? "Price and capacity changes apply to new bookings only." : "It's saved as a draft. Add photos, then publish it to open it for booking."}
-      submitLabel={a ? "Save changes" : "Create draft"}
-      busy={action.busy}
-      error={action.error}
-      wide
-      onClose={onClose}
-      onSubmit={(values) =>
-        action.run(async () => {
-          const optional = (name: string) => text(values.get(name)) || null;
-          const size = text(values.get("sizeSqm"));
-          const slug = text(values.get("slug"));
-          const input: ApartmentInput = {
-            name: text(values.get("name")),
-            unitCode: text(values.get("unitCode")),
-            category: text(values.get("category")),
-            ...(slug ? { slug } : {}),
-            summary: optional("summary"),
-            description: optional("description"),
-            location: {
-              addressLine: optional("addressLine"),
-              area: optional("area"),
-              city: text(values.get("city")),
-              state: text(values.get("state")),
-              country: text(values.get("country")) || "Nigeria",
-              directions: optional("directions"),
-            },
-            nightlyRateKobo: toKobo(values.get("rate")),
-            cautionFeeKobo: toKobo(values.get("cautionFee")),
-            maxGuests: Number(values.get("maxGuests")),
-            bedrooms: Number(values.get("bedrooms")),
-            bathrooms: Number(values.get("bathrooms")),
-            beds: Number(values.get("beds")),
-            sizeSqm: size ? Number(size) : null,
-            minimumNights: Number(values.get("minimumNights")),
-            checkInTime: text(values.get("checkInTime")),
-            checkOutTime: text(values.get("checkOutTime")),
-            amenities: labels(values.get("amenities")),
-            features: labels(values.get("features")),
-            facilities: labels(values.get("facilities")),
-            houseRules: labels(values.get("houseRules")),
-            cancellationPolicy: optional("cancellationPolicy"),
-            warrantyPolicy: optional("warrantyPolicy"),
-          };
-          if (!a) {
-            // Create treats absent optional fields as unset rather than null.
-            const created = await api.apartments.create(Object.fromEntries(Object.entries(input).filter(([, value]) => value !== null)) as ApartmentInput);
-            notify(`${created.name} created as a draft`);
-            onSaved(created);
-          } else {
-            const saved = await api.apartments.update(a.id, input);
-            notify(`${saved.name} updated`);
-            onSaved(saved);
-          }
-        })
-      }
-    >
-      <p className="form-section-title">Listing</p>
-      <div className="form-row">
-        <Field label="Name" hint="Shown to guests, e.g. The Penthouse">
-          <input name="name" required maxLength={80} defaultValue={a?.name} />
-        </Field>
-        <Field label="Category" hint="e.g. Studio, 2-bedroom">
-          <input name="category" required maxLength={60} defaultValue={a?.category} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Unit code" hint="Internal, unique, e.g. P1">
-          <input name="unitCode" required maxLength={20} defaultValue={a?.unitCode} />
-        </Field>
-        <Field label="Web address" hint="Leave empty to use the name">
-          <input name="slug" maxLength={80} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="the-penthouse" defaultValue={a?.slug} />
-        </Field>
-      </div>
-      <Field label="Summary" hint="One line for the apartment card">
-        <input name="summary" maxLength={300} defaultValue={a?.summary ?? ""} />
-      </Field>
-      <Field label="Description">
-        <textarea name="description" maxLength={10000} rows={4} defaultValue={a?.description ?? ""} />
-      </Field>
-
-      <p className="form-section-title">Price and capacity</p>
-      <div className="form-row">
-        <Field label="Nightly rate (₦)">
-          <input name="rate" type="number" min="1" step="1" required defaultValue={a?.pricing.nightlyRateKobo ? Number(a.pricing.nightlyRateKobo) / 100 : undefined} />
-        </Field>
-        <Field label="Caution fee (₦)" hint="Shown to guests; collected separately">
-          <input name="cautionFee" type="number" min="0" step="1" defaultValue={a?.pricing.cautionFeeKobo ? Number(a.pricing.cautionFeeKobo) / 100 : 0} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Maximum guests">
-          <input name="maxGuests" type="number" min="1" max="12" required defaultValue={a?.capacity.maxGuests ?? 2} />
-        </Field>
-        <Field label="Size (sqm)">
-          <input name="sizeSqm" type="number" min="1" step="0.1" defaultValue={a?.capacity.sizeSqm ?? ""} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Bedrooms">
-          <input name="bedrooms" type="number" min="0" max="50" required defaultValue={a?.capacity.bedrooms ?? 1} />
-        </Field>
-        <Field label="Beds">
-          <input name="beds" type="number" min="0" max="100" required defaultValue={a?.capacity.beds ?? 1} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Bathrooms">
-          <input name="bathrooms" type="number" min="0" max="50" required defaultValue={a?.capacity.bathrooms ?? 1} />
-        </Field>
-        <Field label="Minimum nights">
-          <input name="minimumNights" type="number" min="1" max="365" required defaultValue={a?.stayRules.minimumNights ?? 1} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Check-in from">
-          <input name="checkInTime" type="time" required defaultValue={a?.stayRules.checkInTime ?? "14:00"} />
-        </Field>
-        <Field label="Check-out by">
-          <input name="checkOutTime" type="time" required defaultValue={a?.stayRules.checkOutTime ?? "12:00"} />
-        </Field>
-      </div>
-
-      <p className="form-section-title">Location</p>
-      <Field label="Street address" hint="Shared with guests only after they book">
-        <input name="addressLine" maxLength={200} defaultValue={a?.location.addressLine ?? ""} />
-      </Field>
-      <div className="form-row">
-        <Field label="Area">
-          <input name="area" maxLength={120} defaultValue={a?.location.area ?? ""} />
-        </Field>
-        <Field label="City">
-          <input name="city" required maxLength={80} defaultValue={a?.location.city ?? "Kaduna"} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="State">
-          <input name="state" required maxLength={80} defaultValue={a?.location.state ?? "Kaduna"} />
-        </Field>
-        <Field label="Country">
-          <input name="country" maxLength={80} defaultValue={a?.location.country ?? "Nigeria"} />
-        </Field>
-      </div>
-      <Field label="Directions" hint="Sent in the booking confirmation email">
-        <textarea name="directions" maxLength={2000} rows={2} defaultValue={a?.location.directions ?? ""} />
-      </Field>
-
-      <p className="form-section-title">What&apos;s included</p>
-      <div className="form-row">
-        <Field label="Amenities" hint="One per line or comma-separated">
-          <textarea name="amenities" rows={3} defaultValue={a?.amenities.join("\n")} placeholder={"Wi-Fi\nAir conditioning\nSmart TV"} />
-        </Field>
-        <Field label="Features">
-          <textarea name="features" rows={3} defaultValue={a?.features.join("\n")} placeholder={"Balcony\nCity view"} />
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Shared facilities">
-          <textarea name="facilities" rows={3} defaultValue={a?.facilities.join("\n")} placeholder={"Swimming pool\nGym\nParking"} />
-        </Field>
-        <Field label="House rules">
-          <textarea name="houseRules" rows={3} defaultValue={a?.houseRules.join("\n")} placeholder={"No smoking\nNo parties"} />
-        </Field>
-      </div>
-
-      <p className="form-section-title">Policies</p>
-      <Field label="Cancellation policy">
-        <textarea name="cancellationPolicy" maxLength={5000} rows={2} defaultValue={a?.policies.cancellation ?? ""} />
-      </Field>
-      <Field label="Damage & caution fee policy">
-        <textarea name="warrantyPolicy" maxLength={5000} rows={2} defaultValue={a?.policies.warranty ?? ""} />
-      </Field>
-    </Modal>
-  );
-}
 
 /** Upload, order, set the cover and delete photos. */
-function PhotoManager({ apartment, editable, notify, onChanged }: { apartment: Apartment; editable: boolean; notify: Notify; onChanged: (next: Apartment) => void }) {
+export function PhotoManager({ apartment, editable, notify, onChanged, bare }: { apartment: Apartment; editable: boolean; notify: Notify; onChanged: (next: Apartment) => void; bare?: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
@@ -265,7 +78,7 @@ function PhotoManager({ apartment, editable, notify, onChanged }: { apartment: A
 
   return (
     <section className="detail-section">
-      <h3>Photos ({images.length})</h3>
+      {!bare && <h3>Photos ({images.length})</h3>}
       <div className="photo-grid">
         {images.map((image, index) => (
           <div className="photo-tile" key={image.id}>
@@ -354,8 +167,11 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
   const [showArchived, setShowArchived] = useState(false);
   const apartments = useResource(() => api.apartments.list(), String(refreshKey));
   const archived = useResource(() => (showArchived ? api.apartments.list({ status: "archived" }) : Promise.resolve([])), `${refreshKey}:${showArchived}`);
-  const [form, setForm] = useState<{ apartment: Apartment | null } | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Returning from the add/edit page opens that apartment (/management?section=Apartments&apartment=<id>).
+  const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("apartment"));
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("apartment")) window.history.replaceState(null, "", "/management?section=Apartments");
+  }, []);
   const [patched, setPatched] = useState<Record<string, Apartment>>({});
   const { confirm, dialog } = useConfirm();
   const editable = can("rooms:create");
@@ -397,9 +213,9 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
           </label>
           <span className="booking-count">{list.filter((apartment) => apartment.status === "published").length} published</span>
           {editable && (
-            <button className="button-primary" onClick={() => setForm({ apartment: null })}>
+            <Link className="button-primary" href="/management/apartments/new">
               <Plus size={16} /> Add apartment
-            </button>
+            </Link>
           )}
         </div>
       </div>
@@ -486,9 +302,9 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
                 </button>
               )}
               {editable && open.status !== "archived" && (
-                <button className="button-secondary" onClick={() => setForm({ apartment: open })}>
-                  <Pencil size={15} /> Edit
-                </button>
+                <Link className="button-secondary" href={`/management/apartments/${open.id}/edit`}>
+                  <Pencil size={15} /> Edit details
+                </Link>
               )}
               {editable && open.status === "draft" && (
                 <button className="button-primary" onClick={() => void setStatus(open, "published")} disabled={open.images.length === 0} title={open.images.length === 0 ? "Add at least one photo first" : undefined}>
@@ -552,18 +368,6 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
           />
           {can("reservations:read") && <ApartmentBookings apartment={open} reference={reference} refreshKey={refreshKey} />}
         </Drawer>
-      )}
-      {form && (
-        <ApartmentForm
-          apartment={form.apartment}
-          notify={notify}
-          onClose={() => setForm(null)}
-          onSaved={(next) => {
-            setForm(null);
-            saved(next);
-            setOpenId(next.id);
-          }}
-        />
       )}
       {dialog}
     </section>
