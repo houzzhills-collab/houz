@@ -27,6 +27,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
+# Standalone output leaves out public/ (the website's images).
+COPY --from=build --chown=node:node /app/public ./public
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
