@@ -50,8 +50,8 @@ const MAX_ATTEMPTS = 8;
 const MAX_AGE_HOURS = 48;
 /** Resend's default limit is 2 requests per second per team. */
 const MIN_SEND_GAP_MS = 550;
-/** Security notices reach owners even when management alerts are switched off. */
-const ALWAYS_SEND = new Set(["alert.settings_changed"]);
+/** Security notices reach owners even when management alerts are switched off, and guests always get the codes they ask for. */
+const ALWAYS_SEND = new Set(["alert.settings_changed", "guest.access_code"]);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -246,6 +246,7 @@ export class EmailService {
       managementUrl: web ? `${web}/management` : null,
       bookingUrl: web ? `${web}/` : null,
       statusUrl: (reference) => (web ? `${web}/payment-result?reference=${encodeURIComponent(reference)}` : null),
+      myBookingsUrl: web ? `${web}/bookings` : null,
     };
   }
 

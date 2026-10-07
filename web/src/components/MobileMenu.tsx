@@ -36,6 +36,9 @@ export default function MobileMenu({ base = "" }: { base?: "" | "/" }) {
             <a href={`${base}#experience`} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 hover:bg-stone-100">
               The experience
             </a>
+            <a href="/bookings" onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 hover:bg-stone-100">
+              My bookings
+            </a>
             <a href={`${base}#availability`} onClick={() => setOpen(false)} className="mt-1 block rounded-xl bg-[#263b34] px-3 py-3 font-semibold text-white">
               Check availability
             </a>

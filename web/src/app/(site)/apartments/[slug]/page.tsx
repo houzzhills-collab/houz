@@ -24,7 +24,7 @@ function ApartmentPage() {
   const initial = isStay(checkIn, checkOut) ? { checkIn: checkIn as string, checkOut: checkOut as string } : null;
   const [loaded, setLoaded] = useState<Loaded>({ slug: "", detail: null, error: "", missing: false });
   // Re-renders once the property's timezone is known, so business dates follow it.
-  const [, setProperty] = useState<Property | null>(null);
+  const [property, setProperty] = useState<Property | null>(null);
 
   useEffect(() => {
     api.publicBooking
@@ -171,7 +171,7 @@ function ApartmentPage() {
             </div>
 
             <aside className="min-w-0 lg:sticky lg:top-6 lg:self-start">
-              <BookingPanel key={apartment.id} apartment={apartment} bookedRanges={detail.bookedRanges} initial={initial} />
+              <BookingPanel key={apartment.id} apartment={apartment} bookedRanges={detail.bookedRanges} initial={initial} payLaterHours={property?.payLaterHours ?? 0} />
             </aside>
           </section>
 

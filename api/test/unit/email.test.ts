@@ -10,6 +10,7 @@ const ctx: TemplateContext = {
   managementUrl: "https://houzzhills.test/management",
   bookingUrl: "https://houzzhills.test/reserve",
   statusUrl: (reference) => `https://houzzhills.test/payment-result?reference=${reference}`,
+  myBookingsUrl: "https://houzzhills.test/bookings",
 };
 
 const stay: StaySummary = {
@@ -30,6 +31,8 @@ const payment = { amountKobo: "5000000", method: "pos", reference: "POS-77", at:
 /** Sample data for every template, so adding a template without a sample fails the type check. */
 const SAMPLES: { [K in TemplateName]: TemplateData[K] } = {
   "guest.booking_received": { stay, holdExpiresAt: "2026-10-05T12:30:00.000Z", checkoutUrl: "https://checkout.paystack.test/abc" },
+  "guest.booking_held": { stay: { ...stay, paidKobo: "0", paymentStatus: "unpaid" }, holdExpiresAt: "2026-10-06T12:30:00.000Z" },
+  "guest.access_code": { expiresMinutes: 10, code: "042917" },
   "guest.booking_confirmed": { stay },
   "guest.checked_in": { stay },
   "guest.checked_out": { stay: { ...stay, paidKobo: stay.amountKobo, paymentStatus: "paid" } },

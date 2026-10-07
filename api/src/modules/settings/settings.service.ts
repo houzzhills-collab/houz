@@ -249,6 +249,7 @@ export class SettingsService {
       flutterwaveSecretKey: secret("payments.flutterwave_secret_key"),
       flutterwaveWebhookHash: secret("payments.flutterwave_webhook_hash"),
       holdMinutes: integer("booking.hold_minutes"),
+      payLaterHours: integer("booking.pay_later_hours"),
       maxStayNights: integer("booking.max_stay_nights"),
       horizonDays: integer("booking.horizon_days"),
       bankTransferReviewHours: integer("payments.bank_transfer_review_hours"),

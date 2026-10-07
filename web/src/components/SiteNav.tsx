@@ -16,6 +16,7 @@ export default function SiteNav({ base = "" }: { base?: "" | "/" }) {
         <a href={`${base}#apartments`} className="hover:text-white">Apartments</a>
         <a href={`${base}#gallery`} className="hover:text-white">Gallery</a>
         <a href={`${base}#experience`} className="hover:text-white">The experience</a>
+        <Link href="/bookings" className="rounded-full border border-white/20 px-4 py-2 hover:border-white/40 hover:text-white">My bookings</Link>
       </div>
       <MobileMenu base={base} />
     </nav>

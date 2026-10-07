@@ -39,7 +39,13 @@ export type Permission =
 /** `permissions` comes from the API, which owns the role table and enforces every one. */
 export type User = { id: string; fullName: string; email: string; role: Role; mustChangePassword: boolean; permissions: Permission[] };
 
-export type Property = { name: string; timezone: string; currency: string };
+export type Property = {
+  name: string;
+  timezone: string;
+  currency: string;
+  /** How long a pay-later website booking is held; 0 when pay later is off. Public endpoint only. */
+  payLaterHours?: number;
+};
 
 export type Option = { value: string; label: string };
 /** Labels and allowed values served by the API for building forms. */
@@ -307,11 +313,51 @@ export type LiveEvent = { id: string; type: string; entityId: string; reference:
 // ---- Public booking ----
 
 export type AvailableRoomType = { room_type: string; nightly_rate_kobo: string; capacity: number; available_count: number };
-export type PublicBookingInput = { name: string; email: string; phone?: string; roomType: string; checkIn: string; checkOut: string; guests: number; notes?: string };
-export type PublicBooking = {
-  reservation: { id: string; reference: string; amountKobo: string; currency: "NGN"; status: "pending_payment"; holdExpiresAt: string };
-  checkoutUrl: string;
+export type PaymentOption = "pay_now" | "pay_later";
+export type PublicBookingInput = {
+  name: string;
+  email: string;
+  phone?: string;
+  roomType: string;
+  checkIn: string;
+  checkOut: string;
+  guests: number;
+  notes?: string;
+  paymentOption?: PaymentOption;
 };
+export type PublicBooking = {
+  reservation: { id: string; reference: string; amountKobo: string; currency: "NGN"; status: "pending_payment"; holdExpiresAt: string; payLater: boolean };
+  /** Null for a pay-later booking. */
+  checkoutUrl: string | null;
+};
+
+/** A booking as its guest sees it on "My bookings" (no account). */
+export type GuestBooking = {
+  reference: string;
+  status: string;
+  bookedOnline: boolean;
+  payLater: boolean;
+  bookedAt: string;
+  /** Set while the booking is held unpaid. */
+  holdExpiresAt: string | null;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guests: number;
+  guest: { name: string; email: string; phone: string | null };
+  notes: string | null;
+  stay: { name: string; unitCode: string | null; apartmentSlug: string | null; address: string | null; checkInTime: string | null; checkOutTime: string | null };
+  payment: {
+    status: string;
+    amountKobo: string;
+    paidKobo: string;
+    balanceKobo: string;
+    cautionFeeKobo: string;
+    payments: Array<{ amountKobo: string; method: string; status: string; at: string }>;
+  };
+  canPay: boolean;
+};
+export type GuestSession = { token: string; expiresAt: string; email: string };
 export type PublicPaymentStatus = { reference: string; paymentStatus: string; reservationStatus: string; amountKobo: string };
 
 /** A published apartment as guests see it (`/public/apartments`). The exact address is shared after booking. */

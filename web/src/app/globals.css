@@ -319,3 +319,5 @@ kbd { display:inline-block;padding:2px 6px;border:1px solid #dfe2e6;border-botto
 .tour-actions { display:flex;align-items:center;gap:8px;margin-top:16px; }
 .tour-actions .spacer { flex:1; }
 @media (prefers-reduced-motion: reduce) { .tour-spot,.palette-backdrop,.tour-card { transition:none;animation:none; } }
+.pay-options { display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:4px 0 12px;padding:0;border:0; }.pay-options legend { margin-bottom:7px;color:#777c86;font-size:13px;font-weight:550; }.pay-options label { display:flex;align-items:flex-start;gap:8px;padding:10px 11px;border:1px solid #e2e5e9;border-radius:6px;cursor:pointer; }.pay-options label.selected { border-color:#b89449;background:#fdfaf3; }.pay-options input { margin-top:2px;accent-color:#9b7a3e; }.pay-options strong,.pay-options small { display:block; }.pay-options strong { color:#383d45;font-size:14px; }.pay-options small { color:#969aa3;font-size:12px;margin-top:3px; }
+.public-main .auth-copy a { color:#98763a;font-weight:600;text-decoration:underline; }

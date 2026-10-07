@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, BedDouble, CalendarDays, Users } from "lucide-react";
-import { api, errorMessage, type AvailableRoomType, type Property } from "@/lib/api";
+import Link from "next/link";
+import { api, errorMessage, type AvailableRoomType, type PaymentOption, type Property } from "@/lib/api";
+import { bookingHref, plural, rememberBooking } from "@/components/site";
 import { applyProperty, money, propertyDate } from "../management/workspace/format";
 
 type Search = { checkIn: string; checkOut: string; guests: number };
@@ -11,7 +13,7 @@ function nights(search: Search): number {
   return Math.round((Date.parse(search.checkOut) - Date.parse(search.checkIn)) / 86_400_000);
 }
 
-/** Public booking: availability, guest details, then the provider's hosted checkout. */
+/** Public booking: availability, guest details, then the provider's hosted checkout or a pay-later hold. */
 export default function ReservePage() {
   const [property, setProperty] = useState<Property | null>(null);
   const [search, setSearch] = useState<Search | null>(null);
@@ -19,8 +21,11 @@ export default function ReservePage() {
   const [chosen, setChosen] = useState<AvailableRoomType | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [choice, setChoice] = useState<PaymentOption>("pay_now");
   // One key per booking attempt, so a double-click or retry never creates a second booking or charge.
-  const attemptKey = useRef<string | null>(null);
+  const attemptKey = useRef<{ option: PaymentOption; value: string } | null>(null);
+  const payLaterHours = property?.payLaterHours ?? 0;
+  const option: PaymentOption = payLaterHours > 0 ? choice : "pay_now";
 
   // Name, timezone and currency come from the API; dates default to the property's tomorrow.
   useEffect(() => {
@@ -61,7 +66,7 @@ export default function ReservePage() {
     setBusy(true);
     setError("");
     try {
-      attemptKey.current ??= crypto.randomUUID();
+      if (attemptKey.current?.option !== option) attemptKey.current = { option, value: crypto.randomUUID() };
       const booking = await api.publicBooking.reserve(
         {
           name: field("name"),
@@ -72,10 +77,16 @@ export default function ReservePage() {
           checkOut: search.checkOut,
           guests: search.guests,
           ...(field("notes") ? { notes: field("notes") } : {}),
+          paymentOption: option,
         },
-        attemptKey.current,
+        attemptKey.current.value,
       );
-      window.location.assign(booking.checkoutUrl);
+      if (booking.checkoutUrl) {
+        window.location.assign(booking.checkoutUrl);
+        return;
+      }
+      rememberBooking(booking.reservation.reference, field("email"));
+      window.location.assign(bookingHref(booking.reservation.reference));
     } catch (caught) {
       setError(errorMessage(caught, "We could not start your booking"));
       setBusy(false);
@@ -95,7 +106,9 @@ export default function ReservePage() {
       </header>
       <main className="public-main">
         <h1>Book your stay</h1>
-        <p className="auth-copy">Choose your dates, pick a room and pay securely online. Your room is held while you pay.</p>
+        <p className="auth-copy">
+          Choose your dates, pick a room and pay securely online{payLaterHours > 0 ? ", or reserve now and pay later" : ""}. Already booked? <Link href="/bookings">Find your booking</Link>.
+        </p>
         {error && <div className="form-error">{error}</div>}
         {!search && !error && <div className="empty-state">Loading…</div>}
 
@@ -175,10 +188,34 @@ export default function ReservePage() {
                 <input name="notes" maxLength={2000} />
               </label>
             </div>
+            {payLaterHours > 0 && (
+              <fieldset className="pay-options">
+                <legend>How would you like to pay?</legend>
+                <label className={option === "pay_now" ? "selected" : ""}>
+                  <input type="radio" name="paymentOption" value="pay_now" checked={option === "pay_now"} onChange={() => setChoice("pay_now")} />
+                  <span>
+                    <strong>Pay now</strong>
+                    <small>Confirmed as soon as you pay</small>
+                  </span>
+                </label>
+                <label className={option === "pay_later" ? "selected" : ""}>
+                  <input type="radio" name="paymentOption" value="pay_later" checked={option === "pay_later"} onChange={() => setChoice("pay_later")} />
+                  <span>
+                    <strong>Pay later</strong>
+                    <small>Held for {plural(payLaterHours, "hour")}</small>
+                  </span>
+                </label>
+              </fieldset>
+            )}
             <button className="button-primary auth-submit" disabled={busy}>
-              {busy ? "Opening secure checkout…" : "Continue to secure payment"} <ArrowRight size={15} />
+              {option === "pay_later" ? (busy ? "Reserving…" : "Reserve now, pay later") : busy ? "Opening secure checkout…" : "Continue to secure payment"} <ArrowRight size={15} />
             </button>
-            <p className="modal-help">You will pay the full stay of {money(BigInt(chosen.nightly_rate_kobo) * BigInt(nights(search)))} on the payment provider&apos;s page. Bookings are non-refundable.</p>
+            <p className="modal-help">
+              {option === "pay_later"
+                ? `We hold your room for ${plural(payLaterHours, "hour")} and email your booking reference and receipt. Pay the full stay of ${money(BigInt(chosen.nightly_rate_kobo) * BigInt(nights(search)))} before then from My bookings; unpaid bookings are released automatically.`
+                : `You will pay the full stay of ${money(BigInt(chosen.nightly_rate_kobo) * BigInt(nights(search)))} on the payment provider's page.`}{" "}
+              Bookings are non-refundable.
+            </p>
           </form>
         )}
       </main>

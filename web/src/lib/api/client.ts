@@ -1,5 +1,7 @@
 import type {
   Apartment,
+  GuestBooking,
+  GuestSession,
   ApartmentStatus,
   ApartmentBookings,
   ApartmentInput,
@@ -177,6 +179,16 @@ export interface ApiClient {
     availability(query: { checkIn: string; checkOut: string; guests: number }): Promise<AvailableRoomType[]>;
     reserve(input: PublicBookingInput, idempotencyKey: string): Promise<PublicBooking>;
     paymentStatus(reference: string): Promise<PublicPaymentStatus>;
+    /** One booking by its reference and email (no account). */
+    lookup(input: { reference: string; email: string }): Promise<GuestBooking>;
+    /** Hosted checkout for a held booking: pay later, or a checkout the guest left. */
+    payBooking(input: { reference: string; email: string }): Promise<{ checkoutUrl: string }>;
+    /** Emails a one-time code if the address has bookings. */
+    requestAccessCode(email: string): Promise<{ expiresMinutes: number }>;
+    verifyAccessCode(input: { email: string; code: string }): Promise<GuestSession>;
+    /** Every booking for a guest session's email. */
+    myBookings(token: string): Promise<{ email: string; bookings: GuestBooking[] }>;
+    endGuestSession(token: string): Promise<void>;
     /** Published apartments; with dates, only those free for the whole stay. */
     apartments(query?: { checkIn?: string; checkOut?: string; guests?: number }): Promise<PublicApartment[]>;
     apartment(slug: string): Promise<PublicApartmentDetail>;

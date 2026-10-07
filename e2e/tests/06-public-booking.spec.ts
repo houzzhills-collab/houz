@@ -21,7 +21,7 @@ async function bookOnline(page: Page, guest: string, arrivalInDays: number): Pro
   await page.getByRole("button", { name: /Continue to secure payment/ }).click();
   await expect(page.getByRole("heading", { name: "Paystack test checkout" })).toBeVisible();
   const reference = decodeURIComponent(new URL(page.url()).pathname.slice(1));
-  expect(reference).toMatch(/^HH-[A-Z0-9]+-[0-9A-F]{32}$/);
+  expect(reference).toMatch(/^HH-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{2}$/);
   return reference;
 }
 
@@ -45,6 +45,45 @@ test.describe("public booking with hosted checkout", () => {
     await signIn(page, OWNER.email, OWNER.password);
     await openSection(page, "Payments");
     await expect(page.getByRole("row", { name: new RegExp(reference) })).toContainText("Online checkout");
+  });
+
+  test("a guest reserves to pay later, finds the booking with reference and email, and pays", async ({ page }) => {
+    await page.route("https://checkout.paystack.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Paystack test checkout</h1>" }));
+    await page.goto("/reserve");
+    await page.getByLabel("Check in").fill(lagosDate(50));
+    await page.getByLabel("Check out").fill(lagosDate(52));
+    await page.getByLabel("Guests").fill("2");
+    await page.getByRole("button", { name: "Check availability" }).click();
+    await page.locator(".room-option", { hasText: "Executive Suite" }).getByRole("button", { name: "Select" }).click();
+    await page.getByLabel("Full name").fill("Later Guest");
+    await page.getByLabel("Email (for your receipt)").fill("later@example.com");
+    await page.getByLabel(/Pay later/).check();
+    await page.getByRole("button", { name: "Reserve now, pay later" }).click();
+
+    // Straight to the receipt, without asking for the email again.
+    await expect(page).toHaveURL(/\/bookings\?reference=/);
+    const reference = new URL(page.url()).searchParams.get("reference") ?? "";
+    expect(reference).toMatch(/^HH-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{2}$/);
+    await expect(page.getByText("Booking receipt")).toBeVisible();
+    await expect(page.getByText("Awaiting payment")).toBeVisible();
+    await expect(page.getByText("Reserve now, pay later")).toBeVisible();
+
+    // Later, in a fresh visit: reference (typed loosely) and email open it, and it can be paid.
+    await page.goto("/bookings");
+    await page.getByLabel("Booking reference").fill(reference.toLowerCase().replaceAll("-", " "));
+    await page.getByLabel("Email used for the booking").fill("LATER@example.com");
+    await page.getByRole("button", { name: "View booking" }).click();
+    await page.getByRole("button", { name: /Pay ₦150,000 now/ }).click();
+    await expect(page.getByRole("heading", { name: "Paystack test checkout" })).toBeVisible();
+    await payAndNotify(page, reference);
+
+    await page.goto(`/payment-result?reference=${encodeURIComponent(reference)}`);
+    await expect(page.getByRole("heading", { name: "Your stay is confirmed" })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("link", { name: "View your booking and receipt" }).click();
+    await page.getByLabel("Email used for the booking").fill("later@example.com");
+    await page.getByRole("button", { name: "View booking" }).click();
+    await expect(page.getByText("Confirmed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Paid in full")).toBeVisible();
   });
 
   test("a payment after the hold lapsed becomes an exception the owner resolves", async ({ page }) => {

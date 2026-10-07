@@ -139,6 +139,29 @@ export async function notifyBookingReceived(tx: Sql, reservationId: string, hold
   });
 }
 
+/** A website guest reserved to pay later: send their booking receipt, and tell reservations staff a booking is held. */
+export async function notifyBookingHeld(tx: Sql, reservationId: string, hold: { expiresAt: Date }): Promise<void> {
+  const loaded = await loadStay(tx, reservationId);
+  if (!loaded) return;
+  const holdExpiresAt = hold.expiresAt.toISOString();
+  if (loaded.email) {
+    await queueEmail(tx, {
+      propertyId: loaded.propertyId,
+      template: "guest.booking_held",
+      to: { email: loaded.email, name: loaded.stay.guestName },
+      data: { stay: loaded.stay, holdExpiresAt },
+      dedupeKey: `guest.booking_held:${reservationId}`,
+    });
+  }
+  await queueAlert(tx, {
+    propertyId: loaded.propertyId,
+    template: "alert.booking_request",
+    data: { stay: loaded.stay, contact: loaded.contact, holdExpiresAt, payLater: true },
+    roles: ["owner", "manager", "front_desk"],
+    dedupeKey: `alert.booking_request:${reservationId}`,
+  });
+}
+
 /** A checkout hold lapsed unpaid: tell the guest the dates were released, and tell staff about an unfinished website booking. */
 export async function notifyHoldExpired(tx: Sql, reservationId: string): Promise<void> {
   await notifyGuestStay(tx, reservationId, "guest.hold_expired");

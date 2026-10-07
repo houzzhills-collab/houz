@@ -12,6 +12,7 @@ export default function SiteFooter({ base = "" }: { base?: "" | "/" }) {
           <a href={`${base}#apartments`} className="hover:text-[#263b34]">Apartments</a>
           <a href={`${base}#gallery`} className="hover:text-[#263b34]">Gallery</a>
           <a href={`${base}#experience`} className="hover:text-[#263b34]">Experience</a>
+          <Link href="/bookings" className="hover:text-[#263b34]">My bookings</Link>
         </div>
         <p className="text-[13px] text-stone-400">© {new Date().getFullYear()} Houzzhills Apartments · Kaduna</p>
       </div>

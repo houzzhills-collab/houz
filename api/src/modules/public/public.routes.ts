@@ -43,7 +43,15 @@ const publicRoutes: FastifyPluginAsyncTypebox = async (app) => {
       schema: {
         tags: ["public"],
         summary: "The property served by the public site",
-        response: { 200: Type.Object({ name: Type.String(), timezone: Type.String(), currency: Type.String() }), ...errorResponses(429, 503) },
+        response: {
+          200: Type.Object({
+            name: Type.String(),
+            timezone: Type.String(),
+            currency: Type.String(),
+            payLaterHours: Type.Integer({ description: "How long a pay-later booking is held; 0 when pay later is off" }),
+          }),
+          ...errorResponses(429, 503),
+        },
       },
     },
     async (_request, reply) => {
@@ -51,8 +59,9 @@ const publicRoutes: FastifyPluginAsyncTypebox = async (app) => {
         sql.maybeOne<{ name: string; timezone: string; currency: string }>(`SELECT name, timezone, currency FROM properties ORDER BY created_at, id LIMIT 1`),
       );
       if (!property) throw Errors.unavailable("The property has not been set up yet", "PROPERTY_NOT_CONFIGURED");
+      const { payLaterHours } = await app.settings.current();
       reply.header("cache-control", "public, max-age=60");
-      return property;
+      return { ...property, payLaterHours };
     },
   );
 
@@ -74,6 +83,7 @@ const publicRoutes: FastifyPluginAsyncTypebox = async (app) => {
         checkOut: body.checkOut,
         guests: body.guests,
         notes: optionalText(body.notes),
+        payLater: body.paymentOption === "pay_later",
         idempotencyKey: request.headers["idempotency-key"],
         fingerprint: sha256Hex(canonicalJson(body)),
       });

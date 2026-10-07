@@ -28,6 +28,32 @@ export function coverImage(apartment: PublicApartment) {
   return apartment.images.find((image) => image.isCover) ?? apartment.images[0] ?? null;
 }
 
+const HANDOFF_KEY = "hh:booking";
+
+/** Remembers a just-made booking for this tab, so /bookings can open it without asking for the email again. */
+export function rememberBooking(reference: string, email: string): void {
+  try {
+    sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ reference, email }));
+  } catch {
+    // Private mode or storage blocked: the guest types their email on /bookings instead.
+  }
+}
+
+/** The email remembered for a booking reference in this tab, if any. */
+export function rememberedEmail(reference: string): string | null {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(HANDOFF_KEY) ?? "null") as { reference?: string; email?: string } | null;
+    return stored?.reference === reference && stored.email ? stored.email : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "My bookings" link for one booking. */
+export function bookingHref(reference: string): string {
+  return `/bookings?reference=${encodeURIComponent(reference)}`;
+}
+
 export function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }

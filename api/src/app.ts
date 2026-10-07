@@ -5,6 +5,7 @@ import Fastify, { type FastifyServerOptions } from "fastify";
 import type { AppConfig } from "./config/env.js";
 import apartmentRoutes from "./modules/apartments/apartments.routes.js";
 import publicApartmentRoutes from "./modules/apartments/public-apartments.routes.js";
+import guestBookingRoutes from "./modules/public/guest-bookings.routes.js";
 import attendanceRoutes from "./modules/attendance/attendance.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
@@ -122,6 +123,7 @@ export function buildApp(config: AppConfig) {
       await api.register(setupRoutes, { prefix: "/setup" });
       await api.register(publicRoutes, { prefix: "/public" });
       await api.register(publicApartmentRoutes, { prefix: "/public/apartments" });
+      await api.register(guestBookingRoutes, { prefix: "/public/bookings" });
       await api.register(webhookRoutes, { prefix: "/webhooks" });
       await api.register(jobRoutes, { prefix: "/cron" });
       await api.register(

@@ -1,23 +1,36 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, ShieldCheck, Users, XCircle } from "lucide-react";
-import { api, errorMessage, type BookedRange, type PublicApartment } from "@/lib/api";
+import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, CreditCard, ShieldCheck, Users, XCircle } from "lucide-react";
+import { api, errorMessage, type BookedRange, type PaymentOption, type PublicApartment } from "@/lib/api";
 import { money, propertyDate } from "@/app/management/workspace/format";
-import { isStay, nightsBetween, overlapsBooked, plural, stayDate } from "@/components/site";
+import { bookingHref, isStay, nightsBetween, overlapsBooked, plural, rememberBooking, stayDate } from "@/components/site";
 
 type Stay = { checkIn: string; checkOut: string; guests: number };
 type Check = { key: string; available: boolean };
 
 const stayKey = (stay: Stay) => `${stay.checkIn}/${stay.checkOut}/${stay.guests}`;
 
-/** Dates, a live availability check, guest details, then the payment provider's hosted checkout. */
-export default function BookingPanel({ apartment, bookedRanges, initial }: { apartment: PublicApartment; bookedRanges: BookedRange[]; initial: { checkIn: string; checkOut: string } | null }) {
+/** Dates, a live availability check, guest details, then the payment provider's hosted checkout or a pay-later hold. */
+export default function BookingPanel({
+  apartment,
+  bookedRanges,
+  initial,
+  payLaterHours,
+}: {
+  apartment: PublicApartment;
+  bookedRanges: BookedRange[];
+  initial: { checkIn: string; checkOut: string } | null;
+  /** 0 when pay later is off. */
+  payLaterHours: number;
+}) {
   const { capacity, stayRules, pricing } = apartment;
   const [stay, setStay] = useState<Stay>({ checkIn: initial?.checkIn ?? "", checkOut: initial?.checkOut ?? "", guests: Math.min(2, capacity.maxGuests) });
   const [check, setCheck] = useState<Check | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [choice, setChoice] = useState<PaymentOption>("pay_now");
+  const option: PaymentOption = payLaterHours > 0 ? choice : "pay_now";
   // One key per booking attempt, so a double-click or retry never creates a second booking or charge.
   const attemptKey = useRef<{ key: string; value: string } | null>(null);
 
@@ -66,7 +79,7 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
     setBusy(true);
     setError("");
     try {
-      const key = stayKey(stay);
+      const key = `${stayKey(stay)}/${option}`;
       if (attemptKey.current?.key !== key) attemptKey.current = { key, value: crypto.randomUUID() };
       const booking = await api.publicBooking.reserve(
         {
@@ -78,10 +91,16 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
           checkOut: stay.checkOut,
           guests: stay.guests,
           ...(field("notes") ? { notes: field("notes") } : {}),
+          paymentOption: option,
         },
         attemptKey.current.value,
       );
-      window.location.assign(booking.checkoutUrl);
+      if (booking.checkoutUrl) {
+        window.location.assign(booking.checkoutUrl);
+        return;
+      }
+      rememberBooking(booking.reservation.reference, field("email"));
+      window.location.assign(bookingHref(booking.reservation.reference));
     } catch (caught) {
       setError(errorMessage(caught, "We could not start your booking"));
       setBusy(false);
@@ -172,11 +191,36 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
           <input name="email" aria-label="Email" placeholder="Email (for your confirmation)" type="email" autoComplete="email" required maxLength={254} className={`${field} w-full`} />
           <input name="phone" aria-label="Phone" placeholder="Phone (optional)" type="tel" autoComplete="tel" maxLength={32} pattern="[\+0-9 \(\)\-]*" className={`${field} w-full`} />
           <textarea name="notes" aria-label="Notes" placeholder="Anything we should know? (optional)" rows={2} maxLength={2000} className={`${field} w-full resize-none`} />
+          {payLaterHours > 0 && (
+            <fieldset className="grid grid-cols-2 gap-2">
+              <legend className="mb-2 text-xs uppercase tracking-[.16em] text-stone-500">How would you like to pay?</legend>
+              {(
+                [
+                  ["pay_now", <CreditCard key="icon" size={15} />, "Pay now", "Confirmed instantly"],
+                  ["pay_later", <Clock3 key="icon" size={15} />, "Pay later", `Held for ${plural(payLaterHours, "hour")}`],
+                ] as const
+              ).map(([value, icon, title, hint]) => (
+                <label
+                  key={value}
+                  className={`flex min-w-0 cursor-pointer flex-col gap-1 rounded-2xl border px-4 py-3 ${option === value ? "border-[#b28247] bg-[#fbf6ee]" : "border-[#e6dfd2] bg-white"}`}
+                >
+                  <input type="radio" name="paymentOption" value={value} checked={option === value} onChange={() => setChoice(value)} className="sr-only" />
+                  <span className="flex items-center gap-2 text-[14px] font-semibold text-[#263b34]">
+                    {icon} {title}
+                  </span>
+                  <span className="text-xs text-stone-500">{hint}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
           <button type="submit" disabled={busy} className="flex w-full items-center justify-between rounded-full bg-[#dfb56f] px-6 py-4 text-[15px] font-semibold text-[#263b34] hover:bg-[#edc98e] disabled:opacity-60">
-            {busy ? "Opening secure checkout…" : `Book and pay ${money(total)}`} <ArrowRight size={16} />
+            {option === "pay_later" ? (busy ? "Reserving…" : "Reserve now, pay later") : busy ? "Opening secure checkout…" : `Book and pay ${money(total)}`} <ArrowRight size={16} />
           </button>
           <p className="flex gap-2 text-xs leading-5 text-stone-500">
-            <ShieldCheck size={15} className="shrink-0 text-[#31715d]" /> You&apos;ll pay securely on our payment partner&apos;s page. Your dates are held while you pay, and we email your confirmation.
+            <ShieldCheck size={15} className="shrink-0 text-[#31715d]" />
+            {option === "pay_later"
+              ? `We hold your dates for ${plural(payLaterHours, "hour")} and email your booking reference and receipt. Pay any time before then from My bookings; unpaid bookings are released automatically.`
+              : "You'll pay securely on our payment partner's page. Your dates are held while you pay, and we email your confirmation."}
           </p>
         </form>
       )}

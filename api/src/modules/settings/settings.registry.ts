@@ -93,6 +93,17 @@ export const SETTINGS = [
     description: "How long a room is held while a guest pays online.",
   },
   {
+    key: "booking.pay_later_hours",
+    group: "booking",
+    type: "integer",
+    secret: false,
+    minimum: 0,
+    maximum: 168,
+    default: 24,
+    label: "Pay-later hold (hours)",
+    description: "How long a website booking is held unpaid when the guest chooses to pay later. 0 turns pay later off.",
+  },
+  {
     key: "booking.max_stay_nights",
     group: "booking",
     type: "integer",
@@ -220,6 +231,8 @@ export type GlobalSettings = Readonly<{
   flutterwaveSecretKey: string | null;
   flutterwaveWebhookHash: string | null;
   holdMinutes: number;
+  /** 0 when pay later is off. */
+  payLaterHours: number;
   maxStayNights: number;
   horizonDays: number;
   bankTransferReviewHours: number;

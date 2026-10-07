@@ -27,7 +27,7 @@ export default fp(
       origin: (origin, callback) => callback(null, origin === undefined || allowedOrigins.has(origin)),
       credentials: true,
       methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Authorization", "Content-Type", "Idempotency-Key", "X-Request-Id"],
+      allowedHeaders: ["Authorization", "Content-Type", "Idempotency-Key", "X-Request-Id", "X-Guest-Session"],
       exposedHeaders: ["X-Request-Id", "Retry-After", "Idempotent-Replayed", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
       maxAge: 600,
       strictPreflight: true,

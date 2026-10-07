@@ -38,6 +38,8 @@ export type PaymentSummary = { amountKobo: string; method: string; reference: st
 
 export type TemplateData = {
   "guest.booking_received": { stay: StaySummary; holdExpiresAt: string; checkoutUrl: string };
+  "guest.booking_held": { stay: StaySummary; holdExpiresAt: string };
+  "guest.access_code": { expiresMinutes: number; code?: string };
   "guest.booking_confirmed": { stay: StaySummary };
   "guest.checked_in": { stay: StaySummary };
   "guest.checked_out": { stay: StaySummary };
@@ -54,7 +56,7 @@ export type TemplateData = {
   "alert.payment_exception": { kind: string; reference: string | null; provider: string | null; expectedKobo: string | null; receivedKobo: string | null; at: string };
   "alert.transfer_pending": { source: "accommodation" | "restaurant"; reference: string; amountKobo: string; senderReference: string | null; recordedBy: string; guestName: string | null };
   "alert.new_booking": { stay: StaySummary };
-  "alert.booking_request": { stay: StaySummary; contact: GuestContact; holdExpiresAt: string };
+  "alert.booking_request": { stay: StaySummary; contact: GuestContact; holdExpiresAt: string; payLater?: boolean };
   "alert.booking_expired": { stay: StaySummary; contact: GuestContact };
   "alert.low_stock": { items: Array<{ name: string; unit: string; quantity: string; reorderLevel: string }>; cause: string };
   "alert.cash_variance": { cashier: string; openingFloatKobo: string; expectedKobo: string; countedKobo: string; varianceKobo: string; closedAt: string };
@@ -85,6 +87,8 @@ export type TemplateName = keyof TemplateData;
 
 export const TEMPLATE_AUDIENCE: Readonly<Record<TemplateName, Audience>> = {
   "guest.booking_received": "guest",
+  "guest.booking_held": "guest",
+  "guest.access_code": "guest",
   "guest.booking_confirmed": "guest",
   "guest.checked_in": "guest",
   "guest.checked_out": "guest",
@@ -124,6 +128,8 @@ export type TemplateContext = {
   bookingUrl: string | null;
   /** The public payment status page for a website booking reference. */
   statusUrl: (reference: string) => string | null;
+  /** The guest's "My bookings" page, when PUBLIC_WEB_URL is configured. Optional so older callers still type-check. */
+  myBookingsUrl?: string | null;
 };
 
 // ---- Formatting ----
@@ -221,6 +227,12 @@ function statusButton(stay: StaySummary, ctx: TemplateContext): Block[] {
   return url ? [{ kind: "button", label: "View booking status", url }] : [];
 }
 
+/** Opens the booking on the guest's "My bookings" page, where they can pay, print a receipt and see their other bookings. */
+function manageButton(stay: StaySummary, ctx: TemplateContext, label = "View your booking"): Block[] {
+  if (!stay.publicReference || !ctx.myBookingsUrl) return [];
+  return [{ kind: "button", label, url: `${ctx.myBookingsUrl}?reference=${encodeURIComponent(stay.reference)}` }];
+}
+
 function workspaceButton(ctx: TemplateContext, label = "Open the workspace"): Block[] {
   return ctx.managementUrl ? [{ kind: "button", label, url: ctx.managementUrl }] : [];
 }
@@ -252,6 +264,48 @@ const TEMPLATES: Templates = {
     reason: GUEST_REASON(ctx),
   }),
 
+  "guest.booking_held": ({ stay, holdExpiresAt }, ctx) => ({
+    subject: `Booking reserved · pay by ${moment(holdExpiresAt)} · ${stay.reference}`,
+    preheader: `Your ${stay.roomType} is held for you until ${moment(holdExpiresAt)}.`,
+    eyebrow: "Booking reserved",
+    tone: "neutral",
+    heading: `Thanks, ${firstName(stay.guestName)}. Your booking is reserved`,
+    blocks: [
+      {
+        kind: "paragraph",
+        text: `We've reserved your dates at ${ctx.brand.propertyName}. You chose to pay later: pay any time before ${moment(holdExpiresAt)} to confirm your stay. Keep this email as your booking receipt; your booking reference is ${stay.reference}.`,
+      },
+      stayDetails(stay, "Booking receipt"),
+      {
+        kind: "callout",
+        tone: "warning",
+        title: `Pay by ${moment(holdExpiresAt)}`,
+        text: "Bookings that are still unpaid by then are released automatically, and nothing is charged.",
+      },
+      ...manageButton(stay, ctx, "View booking and pay"),
+      {
+        kind: "paragraph",
+        text: "You can come back to your booking at any time: open My bookings on our website and enter your email address with this reference, or ask for a one-time code to see all your bookings.",
+      },
+    ],
+    reason: GUEST_REASON(ctx),
+  }),
+
+  "guest.access_code": ({ expiresMinutes, code }, ctx) => ({
+    subject: `Your ${ctx.brand.propertyName} booking code`,
+    preheader: `Use this code to view your bookings. It expires in ${expiresMinutes} minutes.`,
+    eyebrow: "My bookings",
+    tone: "neutral",
+    heading: "Your one-time code",
+    blocks: [
+      { kind: "paragraph", text: `Enter this code on the My bookings page to see your bookings with ${ctx.brand.propertyName}.` },
+      ...(code ? [{ kind: "code", label: "One-time code", value: code } as const] : []),
+      { kind: "paragraph", text: `The code expires in ${expiresMinutes} minutes and works once. Never share it with anyone.` },
+      { kind: "callout", tone: "neutral", text: "Didn't ask for this? You can ignore this email; nobody can see your bookings without the code." },
+    ],
+    reason: `You are receiving this because someone asked to view the bookings for this email address at ${ctx.brand.propertyName}.`,
+  }),
+
   "guest.booking_confirmed": ({ stay }, ctx) => {
     const paid = stay.paymentStatus === "paid";
     return {
@@ -269,6 +323,7 @@ const TEMPLATES: Templates = {
         ...arrivalBlocks(stay),
         { kind: "paragraph", text: "If your plans change or you have any special requests, simply reply to this email and our front desk will help." },
         ...statusButton(stay, ctx),
+        ...manageButton(stay, ctx),
       ],
       reason: GUEST_REASON(ctx),
     };
@@ -348,7 +403,7 @@ const TEMPLATES: Templates = {
     blocks: [
       {
         kind: "paragraph",
-        text: `Hi ${firstName(stay.guestName)}, we held a ${stay.roomType} for ${day(stay.checkIn)} to ${day(stay.checkOut)} while you checked out, but we didn't receive payment in time, so the room has been released.`,
+        text: `Hi ${firstName(stay.guestName)}, we held a ${stay.roomType} for ${day(stay.checkIn)} to ${day(stay.checkOut)} for you, but we didn't receive payment in time, so the room has been released.`,
       },
       { kind: "callout", tone: "neutral", text: "No money has been taken for this booking. If your bank shows a charge, reply to this email with your reference and we'll sort it out right away." },
       { kind: "details", title: "Released booking", rows: stayRows(stay, { money: false }) },
@@ -400,6 +455,7 @@ const TEMPLATES: Templates = {
           ? { kind: "callout", tone: "warning", title: "Balance due", text: `${naira(balance)} is still due. You can pay at the front desk.` }
           : { kind: "callout", tone: "success", title: "Fully paid", text: "Your booking is fully paid. Thank you!" },
         ...statusButton(stay, ctx),
+        ...manageButton(stay, ctx, "View booking and receipt"),
       ],
       reason: GUEST_REASON(ctx),
     };
@@ -555,16 +611,18 @@ const TEMPLATES: Templates = {
     reason: ALERT_REASON(ctx),
   }),
 
-  "alert.booking_request": ({ stay, contact, holdExpiresAt }, ctx) => ({
-    subject: `Booking request · ${roomLabel(stay)} · ${day(stay.checkIn)}`,
-    preheader: `${stay.guestName} started a website booking and is paying online.`,
-    eyebrow: "New booking request",
+  "alert.booking_request": ({ stay, contact, holdExpiresAt, payLater }, ctx) => ({
+    subject: `${payLater ? "Pay-later booking" : "Booking request"} · ${roomLabel(stay)} · ${day(stay.checkIn)}`,
+    preheader: payLater ? `${stay.guestName} reserved on the website and will pay later.` : `${stay.guestName} started a website booking and is paying online.`,
+    eyebrow: payLater ? "New pay-later booking" : "New booking request",
     tone: "neutral",
-    heading: `${stay.guestName} is booking online`,
+    heading: payLater ? `${stay.guestName} reserved online to pay later` : `${stay.guestName} is booking online`,
     blocks: [
       {
         kind: "paragraph",
-        text: `A guest has started a booking on the website. The dates are held until ${moment(holdExpiresAt)}. You'll get another email when the payment is confirmed, or if the hold expires unpaid.`,
+        text: payLater
+          ? `A guest has reserved on the website and chose to pay later. The dates are held until ${moment(holdExpiresAt)}. You'll get another email when the payment is confirmed, or if the hold expires unpaid. A payment you record against the booking before then also confirms it.`
+          : `A guest has started a booking on the website. The dates are held until ${moment(holdExpiresAt)}. You'll get another email when the payment is confirmed, or if the hold expires unpaid.`,
       },
       { kind: "details", rows: [...stayRows(stay), ...contactRows(contact)] },
       ...workspaceButton(ctx, "View reservations"),

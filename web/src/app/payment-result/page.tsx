@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { api, errorMessage, type Property, type PublicPaymentStatus } from "@/lib/api";
+import { bookingHref } from "@/components/site";
 import { applyProperty, money } from "../management/workspace/format";
 
 const POLL_MS = 3_000;
@@ -85,6 +86,11 @@ function PaymentResult() {
           </>
         )}
         {error && <div className="form-error">{error}</div>}
+        {reference && (
+          <Link className="auth-public-link" href={bookingHref(reference)}>
+            View your booking and receipt
+          </Link>
+        )}
       </div>
     </div>
   );

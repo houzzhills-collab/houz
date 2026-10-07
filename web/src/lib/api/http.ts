@@ -1,6 +1,8 @@
 import { ApiError, type ApiClient } from "./client";
 import type {
   Apartment,
+  GuestBooking,
+  GuestSession,
   ApartmentBookings,
   ReservationPayment,
   StockMovement,
@@ -44,7 +46,7 @@ import type {
  */
 
 type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-type RequestOptions = { body?: unknown; form?: FormData; idempotencyKey?: string; authenticated?: boolean; retryOnExpiry?: boolean };
+type RequestOptions = { body?: unknown; form?: FormData; idempotencyKey?: string; authenticated?: boolean; retryOnExpiry?: boolean; headers?: Record<string, string> };
 type TokenResponse = { accessToken: string; user: User };
 
 const PREFIX = "/api/v1";
@@ -62,7 +64,7 @@ export function createHttpClient(baseUrl: string): ApiClient {
   let refreshing: Promise<boolean> | null = null;
 
   async function send(method: Method, path: string, options: RequestOptions): Promise<Response> {
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", ...options.headers };
     // The browser sets the multipart boundary itself for form uploads.
     if (options.body !== undefined && !options.form) headers["Content-Type"] = "application/json";
     if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
@@ -398,6 +400,12 @@ export function createHttpClient(baseUrl: string): ApiClient {
       },
       reserve: (input, idempotencyKey) => request<PublicBooking>("POST", "/public/reservations", { body: input, idempotencyKey, authenticated: false }),
       paymentStatus: (reference) => request<PublicPaymentStatus>("GET", `/public/payments/${encodeURIComponent(reference)}`, { authenticated: false }),
+      lookup: async (input) => (await request<{ booking: GuestBooking }>("POST", "/public/bookings/lookup", { body: input, authenticated: false })).booking,
+      payBooking: (input) => request<{ checkoutUrl: string }>("POST", "/public/bookings/checkout", { body: input, authenticated: false }),
+      requestAccessCode: (email) => request<{ expiresMinutes: number }>("POST", "/public/bookings/access-code", { body: { email }, authenticated: false }),
+      verifyAccessCode: (input) => request<GuestSession>("POST", "/public/bookings/session", { body: input, authenticated: false }),
+      myBookings: (token) => request<{ email: string; bookings: GuestBooking[] }>("GET", "/public/bookings", { authenticated: false, headers: { "x-guest-session": token } }),
+      endGuestSession: (token) => request<void>("DELETE", "/public/bookings/session", { authenticated: false, headers: { "x-guest-session": token } }),
       async apartments({ checkIn, checkOut, guests } = {}) {
         const apartments: PublicApartment[] = [];
         let cursor: string | null = null;

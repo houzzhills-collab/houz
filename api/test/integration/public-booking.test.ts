@@ -64,7 +64,7 @@ describe.skipIf(!integration)("public booking, checkout and online settlement", 
     expect(response.statusCode).toBe(201);
     const body = response.json<{ reservation: { reference: string; amountKobo: string; status: string; holdExpiresAt: string }; checkoutUrl: string }>();
     expect(body.reservation).toMatchObject({ amountKobo: "15000000", status: "pending_payment" });
-    expect(body.reservation.reference).toMatch(/^HH-[A-Z0-9]+-[0-9A-F]{32}$/);
+    expect(body.reservation.reference).toMatch(/^HH-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{2}$/);
     expect(body.checkoutUrl).toBe(`https://checkout.paystack.test/${body.reservation.reference}`);
     const holdMinutes = (Date.parse(body.reservation.holdExpiresAt) - Date.now()) / 60_000;
     expect(holdMinutes).toBeGreaterThan(19);
