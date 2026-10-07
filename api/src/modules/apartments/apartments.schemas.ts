@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { NextCursor, PageQuery } from "../../lib/pagination.js";
+import { MAX_IMAGES_PER_APARTMENT } from "./images.js";
 import { IdParams, IsoDate, KoboInput, KoboString, Nullable, StringEnum, Text, Timestamp, Uuid, errorResponses } from "../../lib/schemas.js";
 
 export const APARTMENT_STATUSES = ["draft", "published", "archived"] as const;
@@ -242,7 +243,7 @@ export const UploadImagesSchema = {
   tags,
   summary: "Upload photos (multipart/form-data)",
   description:
-    "Send one or more `file` parts (JPEG, PNG or WebP, up to 8 MB each, up to 10 per request and 30 per apartment), and optionally a `caption` field that applies to them. The first photo becomes the cover. Re-uploading an identical photo is ignored.",
+    `Send one or more \`file\` parts (JPEG, PNG or WebP, up to 8 MB each, up to 10 per request and ${MAX_IMAGES_PER_APARTMENT} per apartment), and optionally a \`caption\` field that applies to them. The first photo becomes the cover. Re-uploading an identical photo is ignored.`,
   security,
   consumes: ["multipart/form-data"],
   params: IdParams,
@@ -269,7 +270,7 @@ export const ReorderImagesSchema = {
   summary: "Set the photo order",
   security,
   params: IdParams,
-  body: Type.Object({ imageIds: Type.Array(Uuid, { minItems: 1, maxItems: 30, description: "Every photo of the apartment, in display order" }) }, { additionalProperties: false }),
+  body: Type.Object({ imageIds: Type.Array(Uuid, { minItems: 1, maxItems: MAX_IMAGES_PER_APARTMENT, description: "Every photo of the apartment, in display order" }) }, { additionalProperties: false }),
   response: { 200: ApartmentResponse, ...errorResponses(401, 403, 404, 422) },
 };
 

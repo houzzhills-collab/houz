@@ -9,7 +9,7 @@ import { encodeKey } from "../../lib/object-storage.js";
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export const MAX_IMAGES_PER_UPLOAD = 10;
-export const MAX_IMAGES_PER_APARTMENT = 30;
+export const MAX_IMAGES_PER_APARTMENT = 24;
 
 export type ImageType = "image/jpeg" | "image/png" | "image/webp";
 

@@ -23,6 +23,9 @@ export function StatusPill({ status }: { status: ApartmentStatus }) {
   );
 }
 
+/** Matches the API's per-apartment limit (MAX_IMAGES_PER_APARTMENT). */
+export const MAX_APARTMENT_PHOTOS = 24;
+
 const cover = (apartment: Apartment) => apartment.images.find((image) => image.isCover) ?? apartment.images[0] ?? null;
 
 /** Upload, order, set the cover and delete photos. */
@@ -41,8 +44,11 @@ export function PhotoManager({ apartment, editable, notify, onChanged, bare }: {
   };
 
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = [...(event.target.files ?? [])];
+    const picked = [...(event.target.files ?? [])];
     event.target.value = "";
+    const room = MAX_APARTMENT_PHOTOS - images.length;
+    const files = picked.slice(0, Math.max(0, room));
+    if (picked.length > files.length) notify(`An apartment can have up to ${MAX_APARTMENT_PHOTOS} photos. Only the first ${files.length} will be added.`);
     if (files.length === 0) return;
     let latest = apartment;
     let uploaded = 0;
@@ -78,7 +84,11 @@ export function PhotoManager({ apartment, editable, notify, onChanged, bare }: {
 
   return (
     <section className="detail-section">
-      {!bare && <h3>Photos ({images.length})</h3>}
+      {!bare && (
+        <h3>
+          Photos ({images.length} of {MAX_APARTMENT_PHOTOS})
+        </h3>
+      )}
       <div className="photo-grid">
         {images.map((image, index) => (
           <div className="photo-tile" key={image.id}>
@@ -102,14 +112,17 @@ export function PhotoManager({ apartment, editable, notify, onChanged, bare }: {
             )}
           </div>
         ))}
-        {editable && (
+        {editable && images.length < MAX_APARTMENT_PHOTOS && (
           <button type="button" className="photo-upload" disabled={progress !== null} onClick={() => input.current?.click()}>
             <ImagePlus size={22} />
             {progress ?? "Add photos"}
-            <small>JPEG, PNG or WebP · up to 8 MB each</small>
+            <small>
+              {MAX_APARTMENT_PHOTOS - images.length} more allowed · JPEG, PNG or WebP · up to 8 MB each
+            </small>
           </button>
         )}
       </div>
+      {editable && images.length >= MAX_APARTMENT_PHOTOS && <p className="modal-help">This apartment has the maximum of {MAX_APARTMENT_PHOTOS} photos. Delete one to add another.</p>}
       <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(event) => void upload(event)} />
       {images.length === 0 && !editable && <Empty text="No photos yet." />}
       {dialog}

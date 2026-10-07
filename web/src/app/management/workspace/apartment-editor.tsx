@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ImagePlus, Plus, Star, Trash2, X } from "lucide-react";
 import { api, errorMessage, type Apartment, type ApartmentInput } from "@/lib/api";
 import { text, toKobo } from "./format";
-import { PhotoManager, StatusPill } from "./sections/apartments";
+import { MAX_APARTMENT_PHOTOS, PhotoManager, StatusPill } from "./sections/apartments";
 import { Field, InlineError, useResource, type SectionProps } from "./ui";
 
 const SUGGESTIONS = {
@@ -71,7 +71,7 @@ function TagInput({ label, hint, values, suggestions, onChange }: { label: strin
 }
 
 /** Photos picked before the apartment exists; uploaded right after it is created. */
-function QueuedPhotos({ files, onChange }: { files: File[]; onChange: (next: File[]) => void }) {
+function QueuedPhotos({ files, onChange, notify }: { files: File[]; onChange: (next: File[]) => void; notify: SectionProps["notify"] }) {
   const input = useRef<HTMLInputElement>(null);
   const previews = useMemo(() => files.map((file) => URL.createObjectURL(file)), [files]);
   useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews]);
@@ -93,12 +93,19 @@ function QueuedPhotos({ files, onChange }: { files: File[]; onChange: (next: Fil
             </div>
           </div>
         ))}
-        <button type="button" className="photo-upload" onClick={() => input.current?.click()}>
-          <ImagePlus size={22} />
-          Add photos
-          <small>JPEG, PNG or WebP · up to 8 MB each</small>
-        </button>
+        {files.length < MAX_APARTMENT_PHOTOS && (
+          <button type="button" className="photo-upload" onClick={() => input.current?.click()}>
+            <ImagePlus size={22} />
+            Add photos
+            <small>
+              {MAX_APARTMENT_PHOTOS - files.length} more allowed · JPEG, PNG or WebP · up to 8 MB each
+            </small>
+          </button>
+        )}
       </div>
+      <p className="modal-help">
+        {files.length} of {MAX_APARTMENT_PHOTOS} photos
+      </p>
       <input
         ref={input}
         type="file"
@@ -106,7 +113,9 @@ function QueuedPhotos({ files, onChange }: { files: File[]; onChange: (next: Fil
         multiple
         hidden
         onChange={(event) => {
-          onChange([...files, ...(event.target.files ?? [])].slice(0, 30));
+          const picked = [...files, ...(event.target.files ?? [])];
+          if (picked.length > MAX_APARTMENT_PHOTOS) notify(`An apartment can have up to ${MAX_APARTMENT_PHOTOS} photos. Only the first ${MAX_APARTMENT_PHOTOS} are kept.`);
+          onChange(picked.slice(0, MAX_APARTMENT_PHOTOS));
           event.target.value = "";
         }}
       />
@@ -336,7 +345,7 @@ function EditorForm({ apartment, notify, onSaved }: { apartment: Apartment | nul
             {current && <StatusPill status={current.status} />}
           </div>
           <p>{current ? "Changes to photos are saved straight away. The first photo is the cover." : "Choose photos now; they're uploaded when you create the apartment. The first is the cover."}</p>
-          {current ? <PhotoManager apartment={current} editable notify={notify} onChanged={setCurrent} bare /> : <QueuedPhotos files={queued} onChange={setQueued} />}
+          {current ? <PhotoManager apartment={current} editable notify={notify} onChanged={setCurrent} bare /> : <QueuedPhotos files={queued} onChange={setQueued} notify={notify} />}
         </section>
         <section className="panel editor-card editor-actions">
           {!current && (

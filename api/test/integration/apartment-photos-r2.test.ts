@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { App } from "../../src/app.js";
+import { MAX_IMAGES_PER_APARTMENT } from "../../src/modules/apartments/images.js";
 import { FakeR2, R2_TEST_ACCESS_KEY, R2_TEST_BUCKET, R2_TEST_SECRET } from "../fakes/r2.js";
 import { createTestApp, integration, multipart, photo, seedProperty, signedIn } from "../helpers.js";
 
@@ -95,15 +96,16 @@ describe.skipIf(!integration)("apartment photos in Cloudflare R2", () => {
   });
 
   it("refuses over-limit uploads before touching the bucket", async () => {
-    // Fill the apartment up to the 30-photo limit.
+    // Fill the apartment up to the photo limit.
+    const [{ count }] = await app.db.query("SELECT count(*)::int AS count FROM apartment_images WHERE apartment_id = $1", [apartmentId]);
     await app.db.query(
       `INSERT INTO apartment_images(apartment_id, content_type, byte_size, sha256, data, position)
-       SELECT $1, 'image/png', 1, md5(random()::text) || g, '\\x00', 100 + g FROM generate_series(1, 29) g`,
-      [apartmentId],
+       SELECT $1, 'image/png', 1, md5(random()::text) || g, '\\x00', 100 + g FROM generate_series(1, $2::int) g`,
+      [apartmentId, MAX_IMAGES_PER_APARTMENT - count],
     );
     const before = r2.keys().length;
     const response = await upload([{ data: photo("r2-over") }]);
-    expect(response.json()).toMatchObject({ code: "TOO_MANY_IMAGES" });
+    expect(response.json()).toMatchObject({ code: "TOO_MANY_IMAGES", message: `An apartment can have at most 24 photos (it has 24)` });
     expect(r2.keys().length).toBe(before);
     await app.db.query("DELETE FROM apartment_images WHERE apartment_id = $1 AND position >= 100", [apartmentId]);
   });

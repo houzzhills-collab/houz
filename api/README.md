@@ -222,7 +222,7 @@ Because of this, everything that already works for rooms works for apartments: a
 
 **Lifecycle**
 1. `POST /management/apartments` creates a **draft**. Its unit exists but cannot be booked.
-2. Upload photos: `POST /…/{id}/images` as `multipart/form-data` with `file` parts (JPEG, PNG or WebP, checked by content; up to 8 MB each, 10 per request, 30 per apartment). Identical re-uploads are ignored, and the first photo becomes the cover.
+2. Upload photos: `POST /…/{id}/images` as `multipart/form-data` with `file` parts (JPEG, PNG or WebP, checked by content; up to 8 MB each, 10 per request, 24 per apartment). Identical re-uploads are ignored, and the first photo becomes the cover.
 3. `PATCH … { "status": "published" }` opens it for booking and lists it publicly. Publishing needs at least one photo.
 4. `PATCH … { "status": "archived" }` retires it. This is refused while it has upcoming bookings. Nothing is ever hard-deleted, so booking history stays intact.
 
