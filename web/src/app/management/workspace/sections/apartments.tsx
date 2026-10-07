@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Archive, ArrowLeft, ArrowRight, ExternalLink, Eye, EyeOff, ImagePlus, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
@@ -176,15 +176,12 @@ function ApartmentBookings({ apartment, reference, refreshKey }: { apartment: Ap
   );
 }
 
-export function ApartmentsSection({ notify, refreshKey, can, reference }: SectionProps) {
+export function ApartmentsSection({ notify, refreshKey, can, reference, focus }: SectionProps) {
   const [showArchived, setShowArchived] = useState(false);
   const apartments = useResource(() => api.apartments.list(), String(refreshKey));
   const archived = useResource(() => (showArchived ? api.apartments.list({ status: "archived" }) : Promise.resolve([])), `${refreshKey}:${showArchived}`);
-  // Returning from the add/edit page opens that apartment (/management?section=Apartments&apartment=<id>).
-  const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("apartment"));
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("apartment")) window.history.replaceState(null, "", "/management?section=Apartments");
-  }, []);
+  // Search, links and the add/edit page open an apartment directly.
+  const [openId, setOpenId] = useState<string | null>(focus?.id ?? null);
   const [patched, setPatched] = useState<Record<string, Apartment>>({});
   const { confirm, dialog } = useConfirm();
   const editable = can("rooms:create");
@@ -221,7 +218,7 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
           <p>Listings on the website: details, photos, prices and bookings. Select one to manage it.</p>
         </div>
         <div className="heading-actions">
-          <label className="table-filter">
+          <label className="table-filter" data-tip="Archived apartments are off the website. Show them to restore one." data-tip-pos="bottom">
             <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Show archived
           </label>
           <span className="booking-count">{list.filter((apartment) => apartment.status === "published").length} published</span>
@@ -294,7 +291,7 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
           actions={
             <>
               {editable && open.status !== "archived" && (
-                <button className="button-ghost-danger" onClick={() => void setStatus(open, "archived")}>
+                <button className="button-ghost-danger" onClick={() => void setStatus(open, "archived")} data-tip="Retire it from the website. Bookings and history are kept.">
                   <Archive size={15} /> Archive
                 </button>
               )}
@@ -305,7 +302,7 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
               )}
               <span className="spacer" />
               {editable && open.status === "published" && (
-                <button className="button-secondary" onClick={() => void setStatus(open, "draft")}>
+                <button className="button-secondary" onClick={() => void setStatus(open, "draft")} data-tip="Hide it from the website. Existing bookings stay.">
                   <EyeOff size={15} /> Unpublish
                 </button>
               )}
@@ -320,7 +317,13 @@ export function ApartmentsSection({ notify, refreshKey, can, reference }: Sectio
                 </Link>
               )}
               {editable && open.status === "draft" && (
-                <button className="button-primary" onClick={() => void setStatus(open, "published")} disabled={open.images.length === 0} title={open.images.length === 0 ? "Add at least one photo first" : undefined}>
+                <button
+                  className="button-primary"
+                  onClick={() => void setStatus(open, "published")}
+                  disabled={open.images.length === 0}
+                  data-tip={open.images.length === 0 ? "Add at least one photo first" : "Show it on the website and open it for booking"}
+                  data-tip-pos="left"
+                >
                   <Eye size={15} /> Publish
                 </button>
               )}

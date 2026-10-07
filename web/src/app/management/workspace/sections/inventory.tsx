@@ -51,11 +51,13 @@ function MovementHistory({ item, refreshKey }: { item: InventoryItem; refreshKey
   );
 }
 
-export function InventorySection({ notify, refreshKey, can, reference }: SectionProps) {
-  const [showArchived, setShowArchived] = useState(false);
+export function InventorySection({ notify, refreshKey, can, reference, focus }: SectionProps) {
+  const [showArchived, setShowArchived] = useState(Boolean(focus?.id));
   const items = useResource(() => api.inventory.list({ includeArchived: true }), String(refreshKey));
-  const [dialog, setDialog] = useState<{ kind: "item"; item: InventoryItem | null } | { kind: "movement"; itemId?: string } | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "item"; item: InventoryItem | null } | { kind: "movement"; itemId?: string } | null>(
+    focus?.intent === "create" ? { kind: "item", item: null } : focus?.intent === "movement" ? { kind: "movement" } : null,
+  );
+  const [openId, setOpenId] = useState<string | null>(focus?.id ?? null);
   const action = useAction();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const all = items.data ?? [];
@@ -100,14 +102,16 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
         </div>
         <div className="heading-actions">
           {archived > 0 && (
-            <label className="table-filter">
+            <label className="table-filter" data-tip="Archived items are hidden from stock lists and recipes" data-tip-pos="bottom">
               <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Show archived ({archived})
             </label>
           )}
-          <span className="booking-count">{active.filter((item) => item.low_stock).length} low stock</span>
+          <span className="booking-count" data-tip="Items at or below their reorder level" data-tip-pos="bottom">
+            {active.filter((item) => item.low_stock).length} low stock
+          </span>
           {writer && (
             <>
-              <button className="button-secondary" onClick={() => setDialog({ kind: "movement" })} disabled={active.length === 0}>
+              <button className="button-secondary" onClick={() => setDialog({ kind: "movement" })} disabled={active.length === 0} data-tip="Receive a delivery, write off wastage or correct a count" data-tip-pos="bottom">
                 <ArrowDownRight size={15} /> Record movement
               </button>
               <button className="button-primary" onClick={() => setDialog({ kind: "item", item: null })}>
@@ -173,7 +177,7 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
                     <RotateCcw size={15} /> Restore
                   </button>
                 ) : (
-                  <button className="button-ghost-danger" onClick={() => void setActive(open, false)}>
+                  <button className="button-ghost-danger" onClick={() => void setActive(open, false)} data-tip="Hides it from stock lists. The ledger is kept and you can restore it.">
                     <Archive size={15} /> Archive
                   </button>
                 )}

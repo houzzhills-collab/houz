@@ -197,7 +197,7 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
               <p>Tap an item to add it to the current order.</p>
             </div>
             <div className="heading-actions">
-              <span className={`booking-count ${shift ? "shift-open" : ""}`}>{shift ? `Shift open since ${timeLabel(shift.opened_at)}` : "No active shift"}</span>
+              <span className={`booking-count ${shift ? "shift-open" : ""}`} data-tip="Sales are recorded against your open cashier shift" data-tip-pos="bottom">{shift ? `Shift open since ${timeLabel(shift.opened_at)}` : "No active shift"}</span>
               {can("menu:write") && archivedItems.length > 0 && (
                 <label className="table-filter">
                   <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Archived ({archivedItems.length})
@@ -235,7 +235,10 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
                       <span>{item.category}</span>
                       <strong>{item.name}</strong>
                       <b>{money(item.price_kobo)}</b>
-                      <small className={`stock-hint ${left === null ? "none" : left === 0 ? "low" : left <= 5 ? "low" : "ok"}`}>
+                      <small
+                        className={`stock-hint ${left === null ? "none" : left === 0 ? "low" : left <= 5 ? "low" : "ok"}`}
+                        data-tip={left === null ? "Selling this won't change inventory. Edit it to link a stock item." : "Portions the stock on hand allows; it goes down with every sale"}
+                      >
                         {left === null ? "Not linked to stock" : left === 0 ? "Out of stock" : `${left} left in stock`}
                       </small>
                     </button>
@@ -243,6 +246,7 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
                       <div className="pos-menu-tools">
                         <button
                           aria-label={`Edit ${item.name}`}
+                          data-tip="Edit price, category or stock link"
                           onClick={() => {
                             setRecipe(recipeLines(item));
                             setDialog({ kind: "menu-edit", item });
@@ -250,7 +254,7 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
                         >
                           <Pencil size={13} />
                         </button>
-                        <button aria-label={`Archive ${item.name}`} onClick={() => void setActive(item, false)}>
+                        <button aria-label={`Archive ${item.name}`} data-tip="Remove from the till (can be restored)" onClick={() => void setActive(item, false)}>
                           <Archive size={13} />
                         </button>
                       </div>

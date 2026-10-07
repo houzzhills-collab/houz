@@ -146,10 +146,10 @@ function EditReservationModal({ reservation, notify, onClose, onSaved }: { reser
  * Everything staff do with a reservation, shared by Overview and Reservations:
  * the detail drawer, editing, payments and stay changes. Render `dialogs`.
  */
-export function useReservationActions(notify: Notify, onChanged: () => void, reference: Reference, rows: Reservation[] = []) {
+export function useReservationActions(notify: Notify, onChanged: () => void, reference: Reference, rows: Reservation[] = [], initialOpenId: string | null = null) {
   const [paying, setPaying] = useState<Reservation | null>(null);
   const [editing, setEditing] = useState<Reservation | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [version, setVersion] = useState(0);
   const action = useAction();
@@ -205,7 +205,12 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
               {open.actions.next_statuses
                 .filter((status) => status === "cancelled" || status === "no_show")
                 .map((status) => (
-                  <button key={status} className="button-ghost-danger" onClick={() => void changeStatus(open, status)}>
+                  <button
+                    key={status}
+                    className="button-ghost-danger"
+                    data-tip={status === "cancelled" ? "Releases the room and emails the guest. A reason is required." : "The guest didn't arrive. Releases the room."}
+                    onClick={() => void changeStatus(open, status)}
+                  >
                     {status === "cancelled" ? "Cancel" : "No-show"}
                   </button>
                 ))}
@@ -481,17 +486,17 @@ export function NewReservationModal({ notify, onClose, onCreated }: { notify: No
   );
 }
 
-export function ReservationsSection({ notify, refreshKey, can, reference }: SectionProps) {
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
+export function ReservationsSection({ notify, refreshKey, can, reference, focus }: SectionProps) {
+  const [search, setSearch] = useState(focus?.query ?? "");
+  const [query, setQuery] = useState(focus?.query ?? "");
+  const [creating, setCreating] = useState(focus?.intent === "create");
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 350);
     return () => window.clearTimeout(timer);
   }, [search]);
   const reservations = useResource(() => api.reservations.list({ q: query || undefined }), `${refreshKey}:${query}`);
   const rows = reservations.data ?? [];
-  const actions = useReservationActions(notify, () => void reservations.reload(), reference, rows);
+  const actions = useReservationActions(notify, () => void reservations.reload(), reference, rows, focus?.id ?? null);
 
   return (
     <>
@@ -504,7 +509,7 @@ export function ReservationsSection({ notify, refreshKey, can, reference }: Sect
           <div className="heading-actions">
             <span className="booking-count">{rows.length} shown</span>
             {can("reservations:write") && (
-              <button className="button-primary" onClick={() => setCreating(true)}>
+              <button className="button-primary" onClick={() => setCreating(true)} data-tip="Book a guest into a specific room" data-tip-pos="bottom">
                 <Plus size={16} /> New reservation
               </button>
             )}

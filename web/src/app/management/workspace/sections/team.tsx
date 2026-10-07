@@ -20,11 +20,11 @@ function PasswordReveal({ name, password, onClose }: { name: string; password: s
   );
 }
 
-export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onClock }: SectionProps & { clockedIn: boolean | null; onClock: () => void }) {
+export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onClock, focus }: SectionProps & { clockedIn: boolean | null; onClock: () => void }) {
   const staff = useResource(() => api.staff.list(), String(refreshKey));
-  const [onboarding, setOnboarding] = useState(false);
+  const [onboarding, setOnboarding] = useState(focus?.intent === "create");
   const [revealed, setRevealed] = useState<{ name: string; password: string } | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(focus?.id ?? null);
   const [editing, setEditing] = useState<Staff | null>(null);
   const action = useAction();
   const { confirm, dialog } = useConfirm();
@@ -256,7 +256,7 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
             open.can_manage && (
               <>
                 {open.employment_status === "active" ? (
-                  <button className="button-ghost-danger" onClick={() => void setStatus(open, "terminated")}>
+                  <button className="button-ghost-danger" onClick={() => void setStatus(open, "terminated")} data-tip="Disables sign-in. Records are kept and you can reactivate later.">
                     End employment
                   </button>
                 ) : (
@@ -270,7 +270,7 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
                   </button>
                 )}
                 <span className="spacer" />
-                <button className="button-secondary" onClick={() => void resetPassword(open)}>
+                <button className="button-secondary" onClick={() => void resetPassword(open)} data-tip="Issues a one-time password and signs them out everywhere">
                   <KeyRound size={15} /> Reset password
                 </button>
                 <button className="button-primary" onClick={() => setEditing(open)}>

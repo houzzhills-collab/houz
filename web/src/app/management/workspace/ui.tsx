@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { errorMessage, type Permission, type Property, type Reference, type User } from "@/lib/api";
+import type { Focus } from "./assist";
 
 export type Notify = (message: string) => void;
 
@@ -17,6 +18,8 @@ export type SectionProps = {
   /** Labels and allowed values from the API. */
   reference: Reference;
   property: Property;
+  /** A record to open or a form to start when the section mounts (from search or a link). */
+  focus?: Focus | null;
 };
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {

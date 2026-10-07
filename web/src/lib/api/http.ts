@@ -378,6 +378,7 @@ export function createHttpClient(baseUrl: string): ApiClient {
     settings: {
       get: () => request<SettingsSnapshot>("GET", "/management/settings"),
       update: (changes) => request<SettingsSnapshot>("PATCH", "/management/settings", { body: { changes } }),
+      renameProperty: (name) => request<{ name: string }>("PATCH", "/management/settings/property", { body: { name } }),
       verifyPayments: () => request<{ ok: true; provider: string }>("POST", "/management/settings/payments/verify"),
       sendTestEmail: () => request<{ ok: true; to: string }>("POST", "/management/settings/email/test"),
       emailLog: () => request<EmailLog>("GET", "/management/settings/email/messages?limit=25"),

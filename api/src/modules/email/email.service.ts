@@ -186,7 +186,7 @@ export class EmailService {
 
     let subject: string | null = null;
     try {
-      const rendered = renderTemplate(row.template, data, this.context(row.property_name, row.recipient_name));
+      const rendered = renderTemplate(row.template, data, this.context(row.property_name, row.recipient_name, row.audience));
       subject = rendered.subject;
       await this.pace();
       const sent = await sendWithResend(
@@ -237,10 +237,11 @@ export class EmailService {
     this.lastSendAt = Date.now();
   }
 
-  private context(propertyName: string, recipientName: string | null): TemplateContext {
+  private context(propertyName: string, recipientName: string | null, audience: string): TemplateContext {
     const web = this.config.payments.publicWebUrl;
     return {
-      brand: { propertyName, webUrl: web },
+      // Guests see the hospitality brand; staff see the workspace's own logo line.
+      brand: { propertyName, webUrl: web, tagline: audience === "guest" ? "Serviced apartments" : "Property operations" },
       recipientName,
       managementUrl: web ? `${web}/management` : null,
       bookingUrl: web ? `${web}/` : null,
@@ -257,7 +258,7 @@ export class EmailService {
     const { email } = await this.settings.current();
     if (!email.resendApiKey || !email.from) throw Errors.conflict("Save the Resend API key and sender address first", "EMAIL_NOT_CONFIGURED");
     const property = await withConnection(this.db, (sql) => sql.one<{ name: string }>(`SELECT name FROM properties WHERE id = $1`, [principal.propertyId]));
-    const rendered = renderTemplate("system.test", { requestedBy: principal.fullName }, this.context(property.name, principal.fullName));
+    const rendered = renderTemplate("system.test", { requestedBy: principal.fullName }, this.context(property.name, principal.fullName, "management"));
     const id = randomUUID();
     try {
       await this.pace();

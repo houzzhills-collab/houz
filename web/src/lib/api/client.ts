@@ -157,6 +157,8 @@ export interface ApiClient {
     get(): Promise<SettingsSnapshot>;
     update(changes: SettingsChanges): Promise<SettingsSnapshot>;
     verifyPayments(): Promise<{ provider: string }>;
+    /** Renames the property: the workspace logo, receipts, booking pages and every email's brand. */
+    renameProperty(name: string): Promise<{ name: string }>;
     /** Sends a test email to the signed-in owner with the saved Resend key and sender. */
     sendTestEmail(): Promise<{ to: string }>;
     emailLog(): Promise<EmailLog>;

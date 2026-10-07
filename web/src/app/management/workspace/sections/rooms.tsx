@@ -86,11 +86,11 @@ function RoomForm({ room, notify, onClose, onSaved }: { room: Room | null; notif
   );
 }
 
-export function RoomsSection({ notify, refreshKey, can, reference }: SectionProps) {
+export function RoomsSection({ notify, refreshKey, can, reference, focus }: SectionProps) {
   const rooms = useResource(() => api.rooms.list(), String(refreshKey));
-  const [form, setForm] = useState<{ room: Room | null } | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [showRetired, setShowRetired] = useState(false);
+  const [form, setForm] = useState<{ room: Room | null } | null>(focus?.intent === "create" ? { room: null } : null);
+  const [openId, setOpenId] = useState<string | null>(focus?.id ?? null);
+  const [showRetired, setShowRetired] = useState(Boolean(focus?.id));
   const { confirm, dialog } = useConfirm();
   const all = rooms.data ?? [];
   const list = all.filter((room) => showRetired || room.active !== false);
@@ -135,13 +135,13 @@ export function RoomsSection({ notify, refreshKey, can, reference }: SectionProp
         </div>
         <div className="heading-actions">
           {retired > 0 && (
-            <label className="table-filter">
+            <label className="table-filter" data-tip="Retired rooms can't be booked. Show them to restore one." data-tip-pos="bottom">
               <input type="checkbox" checked={showRetired} onChange={(event) => setShowRetired(event.target.checked)} /> Show retired ({retired})
             </label>
           )}
           <span className="booking-count">{list.length} rooms</span>
           {can("rooms:create") && (
-            <button className="button-primary" onClick={() => setForm({ room: null })}>
+            <button className="button-primary" onClick={() => setForm({ room: null })} data-tip="Add a bookable room with its rate and capacity" data-tip-pos="bottom">
               <Plus size={16} /> Add room
             </button>
           )}
@@ -218,7 +218,7 @@ export function RoomsSection({ notify, refreshKey, can, reference }: SectionProp
                     <RotateCcw size={15} /> Restore
                   </button>
                 ) : (
-                  <button className="button-ghost-danger" onClick={() => void setActive(open, false)}>
+                  <button className="button-ghost-danger" onClick={() => void setActive(open, false)} data-tip="Stops new bookings. History is kept and you can restore it.">
                     <Archive size={15} /> Retire room
                   </button>
                 )}

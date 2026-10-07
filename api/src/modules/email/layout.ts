@@ -29,7 +29,8 @@ export type EmailContent = {
   reason: string;
 };
 
-export type Brand = { propertyName: string; webUrl: string | null };
+/** `tagline` sits under the name, as in the workspace logo (e.g. "Property operations"). */
+export type Brand = { propertyName: string; webUrl: string | null; tagline?: string };
 
 export type RenderedEmail = { subject: string; html: string; text: string };
 
@@ -175,9 +176,10 @@ export function renderEmail(content: EmailContent, brand: Brand): RenderedEmail 
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;">
       <tr><td style="background:${COLORS.ink};border-radius:14px 14px 0 0;padding:26px 36px;">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-          <td width="40" height="40" align="center" style="width:40px;height:40px;border-radius:10px;background:#2c3946;font:24px/40px ${SERIF};color:${COLORS.gold};">${initial}</td>
+          <td width="42" height="42" align="center" style="width:42px;height:42px;border-radius:11px;background:#2c3946;font:26px/42px ${SERIF};color:#ffffff;">${initial}<span style="color:${COLORS.gold};">.</span></td>
           <td style="padding-left:14px;">
-            <div style="font:700 13px/1.2 ${FONT};letter-spacing:2px;text-transform:uppercase;color:#ffffff;">${name}</div>
+            <div style="font:700 14px/1.2 ${FONT};letter-spacing:1.5px;text-transform:uppercase;color:#ffffff;">${name}</div>
+            ${brand.tagline ? `<div style="margin-top:5px;font:600 10px/1.2 ${FONT};letter-spacing:1.6px;text-transform:uppercase;color:${COLORS.gold};">${escapeHtml(brand.tagline)}</div>` : ""}
           </td>
         </tr></table>
       </td></tr>

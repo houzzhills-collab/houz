@@ -2,7 +2,9 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { Errors } from "../../lib/errors.js";
-import { Nullable, StringEnum, Timestamp, errorResponses } from "../../lib/schemas.js";
+import { withTransaction } from "../../db/sql.js";
+import { recordEvent } from "../../lib/events.js";
+import { Nullable, StringEnum, Text, Timestamp, errorResponses } from "../../lib/schemas.js";
 import { requirePrincipal } from "../auth/principal.js";
 import { SETTING_KEYS } from "./settings.registry.js";
 
@@ -50,6 +52,40 @@ const settingsRoutes: FastifyPluginAsyncTypebox = async (app) => {
     reply.header("cache-control", "no-store");
     return { settings: await app.settings.list(), environment: environment() };
   };
+
+  app.patch(
+    "/property",
+    {
+      preHandler: app.authorize("settings:manage"),
+      schema: {
+        tags: ["settings"],
+        summary: "Rename the property (owner only)",
+        description: "The name shown in the workspace, on receipts and booking pages, and as the brand in every email.",
+        security,
+        body: Type.Object({ name: Text(120) }, { additionalProperties: false }),
+        response: { 200: Type.Object({ name: Type.String() }), ...errorResponses(401, 403, 422) },
+      },
+    },
+    async (request) => {
+      const principal = requirePrincipal(request);
+      const name = request.body.name.trim();
+      if (!name) throw Errors.unprocessable("Enter the property name", "VALIDATION_FAILED");
+      await withTransaction(app.db, async (tx) => {
+        const before = await tx.one<{ name: string }>(`SELECT name FROM properties WHERE id = $1 FOR UPDATE`, [principal.propertyId]);
+        await tx.exec(`UPDATE properties SET name = $2 WHERE id = $1`, [principal.propertyId, name]);
+        await recordEvent(tx, {
+          propertyId: principal.propertyId,
+          actorId: principal.userId,
+          action: "settings.property_renamed",
+          entityType: "property",
+          entityId: principal.propertyId,
+          details: { from: before.name, to: name },
+          outbox: { reference: name },
+        });
+      });
+      return { name };
+    },
+  );
 
   app.get(
     "/",

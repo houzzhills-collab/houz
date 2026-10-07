@@ -111,4 +111,12 @@ describe.skipIf(!integration)("editing and archiving workspace records", () => {
     await app.inject({ method: "PATCH", url: `${M}/reservations/${blocker.id}`, headers: desk.headers, payload: { status: "cancelled", reason: "Guest changed plans" } });
     expect((await patch(`/reservations/${blocker.id}/details`, { notes: "x" }, desk.headers)).json()).toMatchObject({ code: "RESERVATION_CLOSED" });
   });
+
+  it("lets only the owner rename the property, which brands the site and emails", async () => {
+    const manager = await signedIn(app, propertyId, "manager");
+    expect((await patch("/settings/property", { name: "Houzzhills" }, manager.headers)).statusCode).toBe(403);
+    expect((await patch("/settings/property", { name: "  " })).statusCode).toBe(422);
+    expect((await patch("/settings/property", { name: "  Houzzhills " })).json()).toEqual({ name: "Houzzhills" });
+    expect((await app.db.query("SELECT name FROM properties WHERE id = $1", [propertyId]))[0].name).toBe("Houzzhills");
+  });
 });

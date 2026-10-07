@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CreditCard, Mail, RefreshCw, Send, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Building2, CreditCard, Mail, RefreshCw, Send, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { api, errorMessage, type EmailLogEntry, type SettingView, type SettingsChanges, type SettingsSnapshot } from "@/lib/api";
 import { dateTimeLabel } from "../format";
-import { Empty, Field, InlineError, useResource, type SectionProps } from "../ui";
+import { Empty, Field, InlineError, useAction, useResource, type SectionProps } from "../ui";
 
 const EMAIL_SWITCHES = ["email.guest_notifications", "email.staff_notifications", "email.management_alerts"];
 
@@ -331,12 +331,47 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
   );
 }
 
-export function SettingsSection({ notify }: SectionProps) {
+/** The property name is the brand everywhere: workspace logo, receipts, booking pages and emails. */
+function PropertyNamePanel({ name, notify }: { name: string; notify: SectionProps["notify"] }) {
+  const [value, setValue] = useState(name);
+  const action = useAction();
+  const save = () =>
+    action.run(async () => {
+      const saved = await api.settings.renameProperty(value.trim());
+      notify(`Property renamed to ${saved.name}`);
+      // Reload so the logo and every page pick up the new name.
+      window.setTimeout(() => window.location.reload(), 900);
+    }, "Unable to rename the property");
+  return (
+    <section className="panel settings-card property-name-card">
+      <div className="panel-heading">
+        <div>
+          <h2>
+            <Building2 size={16} /> Property name
+          </h2>
+          <p>Shown in the workspace logo, on receipts and booking pages, and as the brand at the top and bottom of every email.</p>
+        </div>
+      </div>
+      <InlineError message={action.error} onDismiss={action.clearError} />
+      <div className="property-name-row">
+        <Field label="Name">
+          <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder="Houzzhills" />
+        </Field>
+        <button className="button-primary" disabled={action.busy || !value.trim() || value.trim() === name} onClick={() => void save()}>
+          {action.busy ? "Saving…" : "Save name"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function SettingsSection({ notify, property }: SectionProps) {
   const [version, setVersion] = useState(0);
   const snapshot = useResource(() => api.settings.get(), String(version));
   if (!snapshot.data) return <InlineError message={snapshot.error} />;
   return (
     <>
+      <PropertyNamePanel name={property.name} notify={notify} />
       <SettingsForm key={version} snapshot={snapshot.data} notify={notify} onSaved={() => setVersion((current) => current + 1)} />
       <EmailLogPanel version={version} />
     </>

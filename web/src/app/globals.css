@@ -256,3 +256,66 @@ a.button-secondary,a.button-primary { text-decoration:none; }
 .tag-suggestions button:hover { border-style:solid;background:#faf8f3; }
 @media (max-width:1100px) { .editor-layout { grid-template-columns:1fr; } .editor-aside { position:static; } }
 @media (max-width:720px) { .form-row-3 { grid-template-columns:1fr; } .editor-card { padding:16px; } }
+.property-name-card { margin-bottom:16px; }
+.property-name-row { display:flex;align-items:flex-end;gap:10px;max-width:640px; }
+.property-name-row .form-field { flex:1; }
+.property-name-row .button-primary { padding:11px 16px; }
+
+/* ---- Tooltips: add data-tip="…" (and data-tip-pos="right|bottom") to any element ---- */
+[data-tip] { position:relative; }
+[data-tip]::after {
+  content:attr(data-tip);position:absolute;z-index:95;left:50%;bottom:calc(100% + 9px);transform:translate(-50%,4px);
+  width:max-content;max-width:260px;padding:7px 10px;border-radius:7px;background:#1f2a33;color:#fff;
+  font:500 12.5px/1.45 var(--font-inter);letter-spacing:0;text-transform:none;text-align:left;white-space:normal;
+  box-shadow:0 10px 30px #10192340;opacity:0;pointer-events:none;transition:opacity .14s ease .25s,transform .14s ease .25s;
+}
+[data-tip]:hover::after,[data-tip]:focus-visible::after { opacity:1;transform:translate(-50%,0); }
+[data-tip-pos="right"]::after { left:calc(100% + 12px);bottom:auto;top:50%;transform:translate(4px,-50%); }
+[data-tip-pos="right"]:hover::after,[data-tip-pos="right"]:focus-visible::after { transform:translate(0,-50%); }
+[data-tip-pos="bottom"]::after { bottom:auto;top:calc(100% + 9px);transform:translate(-50%,-4px); }
+[data-tip-pos="left"]::after { left:auto;right:calc(100% + 10px);bottom:auto;top:50%;transform:translate(-4px,-50%); }
+[data-tip-pos="left"]:hover::after,[data-tip-pos="left"]:focus-visible::after { transform:translate(0,-50%); }
+@media (hover:none) { [data-tip]::after { display:none; } }
+.management-sidebar { overflow:visible; }
+.management-nav button[data-tip]::after { max-width:230px; }
+
+/* ---- Search trigger, help ---- */
+.search-trigger { display:flex;align-items:center;gap:9px;min-width:280px;margin-right:12px;padding:8px 10px 8px 12px;border:1px solid #e4e6ea;border-radius:8px;background:#f8f9fa;color:#8a8f98;font:500 14px var(--font-inter);cursor:pointer; }
+.search-trigger span { flex:1;text-align:left; }
+.search-trigger:hover { border-color:#c9b48a;background:#fff;color:#5e646d; }
+kbd { display:inline-block;padding:2px 6px;border:1px solid #dfe2e6;border-bottom-width:2px;border-radius:5px;background:#fff;color:#6f747d;font:600 11px var(--font-inter); }
+.help-trigger { display:grid;place-items:center;width:34px;height:34px;border:1px solid #e4e7e9;border-radius:8px;background:#fff;color:#6c727b;cursor:pointer; }
+.help-trigger:hover { color:#9a7b3d;border-color:#d8c79f; }
+@media (max-width:900px) { .search-trigger { min-width:0; } .search-trigger span,.search-trigger kbd { display:none; } }
+
+/* ---- Command palette ---- */
+.palette-backdrop { position:fixed;inset:0;z-index:90;display:flex;justify-content:center;align-items:flex-start;padding:12vh 16px 16px;background:#1c252e66;backdrop-filter:blur(3px);animation:drawer-fade .15s ease; }
+.command-palette { width:min(100%,660px);max-height:70vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid #e6e8eb;border-radius:14px;background:#fff;box-shadow:0 30px 90px #10192355; }
+.palette-search { display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #eef0f2;color:#8a8f98; }
+.palette-search input { flex:1;border:0;outline:0;background:transparent;color:#232c33;font:500 16px var(--font-inter); }
+.palette-list { overflow:auto;padding:6px; }
+.palette-group { padding:10px 10px 5px;color:#a08549;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase; }
+.palette-item { width:100%;display:flex;align-items:flex-start;gap:11px;padding:10px;border:0;border-radius:9px;background:transparent;text-align:left;cursor:pointer; }
+.palette-item.is-active { background:#f5f1e8; }
+.palette-icon { display:grid;place-items:center;width:28px;height:28px;flex:0 0 auto;border-radius:7px;background:#f1f2f4;color:#6c727b; }
+.palette-item.is-active .palette-icon { background:#273842;color:#fff; }
+.palette-text { flex:1;min-width:0;display:flex;flex-direction:column;gap:2px; }
+.palette-text strong { color:#273038;font-size:14.5px;font-weight:600; }
+.palette-text small { color:#8a8f98;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.palette-detail { margin-top:6px;padding:10px 12px;border-radius:8px;background:#fff;border:1px solid #ece4d2;color:#4c535b;font-size:14px;line-height:1.55;white-space:normal; }
+.palette-enter { margin-top:7px;color:#9a7b3d; }
+.palette-empty { padding:28px 16px;text-align:center;color:#8a8f98;font-size:14px;line-height:1.6; }
+.palette-foot { display:flex;gap:16px;padding:9px 16px;border-top:1px solid #eef0f2;background:#fbfbfc;color:#8a8f98;font-size:12.5px; }
+
+/* ---- Guided tour ---- */
+.tour-layer { position:fixed;inset:0;z-index:100; }
+.tour-dim { position:absolute;inset:0;background:#141c2399; }
+.tour-spot { position:fixed;border-radius:12px;box-shadow:0 0 0 9999px #141c2399,0 0 0 3px #d1a748;transition:all .25s cubic-bezier(.2,.7,.2,1);pointer-events:none; }
+.tour-card { position:fixed;width:min(360px,calc(100vw - 32px));padding:18px 18px 14px;border-radius:12px;background:#fff;box-shadow:0 24px 70px #0d151c66;animation:drawer-fade .2s ease; }
+.tour-progress { display:flex;align-items:center;justify-content:space-between;color:#a08549;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase; }
+.tour-progress button { display:grid;place-items:center;border:0;background:transparent;color:#9aa0a8;cursor:pointer; }
+.tour-card h3 { margin:8px 0 6px;color:#232c33;font-family:var(--font-playfair);font-size:21px;font-weight:600; }
+.tour-body { color:#5b626b;font-size:14.5px;line-height:1.6; }
+.tour-actions { display:flex;align-items:center;gap:8px;margin-top:16px; }
+.tour-actions .spacer { flex:1; }
+@media (prefers-reduced-motion: reduce) { .tour-spot,.palette-backdrop,.tour-card { transition:none;animation:none; } }

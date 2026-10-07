@@ -71,6 +71,16 @@ const SAMPLES: { [K in TemplateName]: TemplateData[K] } = {
   "system.test": { requestedBy: "Amina Bello" },
 };
 
+describe("email branding", () => {
+  it("shows the property name and the workspace-style tagline in the header", () => {
+    const rendered = renderTemplate("guest.booking_confirmed", SAMPLES["guest.booking_confirmed"], { ...ctx, brand: { propertyName: "Houzzhills", webUrl: "https://houzzhills.test", tagline: "Serviced apartments" } });
+    expect(rendered.html).toContain(">Houzzhills</div>");
+    expect(rendered.html).toContain("Serviced apartments");
+    expect(rendered.html).toMatch(/>H<span[^>]*>\.<\/span>/);
+    expect(rendered.text.startsWith("HOUZZHILLS")).toBe(true);
+  });
+});
+
 describe("email formatting", () => {
   it("formats kobo as exact naira", () => {
     expect(naira("15000000")).toBe("₦150,000.00");

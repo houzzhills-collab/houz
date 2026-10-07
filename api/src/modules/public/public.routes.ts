@@ -51,7 +51,7 @@ const publicRoutes: FastifyPluginAsyncTypebox = async (app) => {
         sql.maybeOne<{ name: string; timezone: string; currency: string }>(`SELECT name, timezone, currency FROM properties ORDER BY created_at, id LIMIT 1`),
       );
       if (!property) throw Errors.unavailable("The property has not been set up yet", "PROPERTY_NOT_CONFIGURED");
-      reply.header("cache-control", "public, max-age=300");
+      reply.header("cache-control", "public, max-age=60");
       return property;
     },
   );

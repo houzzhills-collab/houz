@@ -370,7 +370,7 @@ function EditorForm({ apartment, notify, onSaved }: { apartment: Apartment | nul
 export function ApartmentEditor({ apartmentId, notify }: SectionProps & { apartmentId?: string }) {
   const router = useRouter();
   const loaded = useResource(() => (apartmentId ? api.apartments.get(apartmentId) : Promise.resolve(null)), apartmentId ?? "new");
-  const done = (saved: Apartment) => router.push(`/management?section=Apartments&apartment=${saved.id}`);
+  const done = (saved: Apartment) => router.push(`/management?section=Apartments&open=${saved.id}`);
   if (apartmentId && !loaded.data) return loaded.error ? <InlineError message={loaded.error} /> : <div className="empty-state">Loading apartment…</div>;
   return <EditorForm key={loaded.data?.id ?? "new"} apartment={loaded.data} notify={notify} onSaved={done} />;
 }
