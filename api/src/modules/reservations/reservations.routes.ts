@@ -1,8 +1,8 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Errors } from "../../lib/errors.js";
 import { requirePrincipal } from "../auth/principal.js";
-import { CreateReservationSchema, ListReservationsSchema, RecordPaymentSchema, UpdateReservationSchema } from "./reservations.schemas.js";
-import { changeReservationStatus, createStaffReservation, listReservations, recordStaffPayment } from "./reservations.service.js";
+import { CreateReservationSchema, ListReservationsSchema, RecordPaymentSchema, ReservationPaymentsSchema, UpdateReservationDetailsSchema, UpdateReservationSchema } from "./reservations.schemas.js";
+import { changeReservationStatus, createStaffReservation, listReservationPayments, listReservations, recordStaffPayment, updateReservationDetails } from "./reservations.service.js";
 import { optionalText } from "../../lib/text.js";
 
 const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
@@ -28,6 +28,14 @@ const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
 
   app.patch("/:id", { schema: UpdateReservationSchema, preHandler: app.authorize("reservations:write") }, async (request) =>
     changeReservationStatus(app, requirePrincipal(request), request.params.id, request.body.status, request.body.reason),
+  );
+
+  app.patch("/:id/details", { schema: UpdateReservationDetailsSchema, preHandler: app.authorize("reservations:write") }, async (request) =>
+    updateReservationDetails(app, requirePrincipal(request), request.params.id, request.body),
+  );
+
+  app.get("/:id/payments", { schema: ReservationPaymentsSchema, preHandler: app.authorize("reservations:read") }, async (request) =>
+    listReservationPayments(app, requirePrincipal(request), request.params.id),
   );
 
   app.post(

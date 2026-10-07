@@ -1,13 +1,13 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { withConnection, withTransaction } from "../../db/sql.js";
-import { BUSINESS_TIMEZONE } from "../../lib/dates.js";
+import { BUSINESS_TIMEZONE, businessToday } from "../../lib/dates.js";
 import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
 import { decodeCursor, toPage } from "../../lib/pagination.js";
 import { hasPermission, type Role } from "../../lib/permissions.js";
 import { requirePrincipal } from "../auth/principal.js";
 import { queueAlert } from "../email/queue.js";
-import { CreateRoomsSchema, ListRoomsSchema, RoomHistorySchema, UpdateRoomSchema, type RoomStatus } from "./rooms.schemas.js";
+import { CreateRoomsSchema, ListRoomsSchema, RoomHistorySchema, UpdateRoomDetailsSchema, UpdateRoomSchema, type RoomStatus } from "./rooms.schemas.js";
 import { optionalText } from "../../lib/text.js";
 
 /** Allowed manual state changes. `occupied` is entered only by check-in. */
@@ -37,6 +37,7 @@ type RoomRow = {
   capacity: number;
   status: string;
   active: boolean;
+  apartment_id: string | null;
   stay: { reference?: string; guest?: string; checkOut: string } | null;
   in_house: boolean;
 };
@@ -48,7 +49,7 @@ const roomRoutes: FastifyPluginAsyncTypebox = async (app) => {
     const cursor = decodeCursor(request.query.cursor, 2);
     const rows = await withConnection(app.db, (sql) =>
       sql.rows<RoomRow>(
-        `SELECT ro.id, ro.room_number, ro.room_type, ro.nightly_rate_kobo::text, ro.capacity, ro.status, ro.active, h.in_house,
+        `SELECT ro.id, ro.room_number, ro.room_type, ro.nightly_rate_kobo::text, ro.capacity, ro.status, ro.active, ap.id AS apartment_id, h.in_house,
                 CASE WHEN r.id IS NULL THEN NULL
                      ELSE json_build_object('reference', r.reference, 'guest', g.full_name, 'checkOut', r.check_out::text) END AS stay
            FROM rooms ro
@@ -60,6 +61,7 @@ const roomRoutes: FastifyPluginAsyncTypebox = async (app) => {
               ORDER BY (status = 'checked_in') DESC, created_at DESC
               LIMIT 1) r ON true
            LEFT JOIN guests g ON g.id = r.guest_id
+           LEFT JOIN apartments ap ON ap.room_id = ro.id
            CROSS JOIN LATERAL (SELECT EXISTS (SELECT 1 FROM reservations WHERE room_id = ro.id AND status = 'checked_in') AS in_house) h
           WHERE ro.property_id = $1 AND ($2::text IS NULL OR (ro.room_number, ro.id) > ($2::text, $3::uuid))
           ORDER BY ro.room_number, ro.id
@@ -168,6 +170,52 @@ const roomRoutes: FastifyPluginAsyncTypebox = async (app) => {
         });
       }
       return { id: request.params.id, status: next };
+    });
+  });
+
+  app.patch("/:id/details", { schema: UpdateRoomDetailsSchema, preHandler: app.authorize("rooms:create") }, async (request) => {
+    const principal = requirePrincipal(request);
+    const body = request.body;
+    const roomNumber = body.roomNumber?.trim();
+    const roomType = body.roomType?.trim();
+    if (roomNumber === "" || roomType === "") throw Errors.unprocessable("Room number and type cannot be blank", "VALIDATION_FAILED");
+    return withTransaction(app.db, async (tx) => {
+      const room = await tx.maybeOne<{ room_number: string; active: boolean; apartment_id: string | null }>(
+        `SELECT ro.room_number, ro.active, ap.id AS apartment_id FROM rooms ro LEFT JOIN apartments ap ON ap.room_id = ro.id
+          WHERE ro.id = $1 AND ro.property_id = $2 FOR UPDATE OF ro`,
+        [request.params.id, principal.propertyId],
+      );
+      if (!room) throw Errors.notFound("Room not found");
+      // The apartment keeps its unit in step with the listing, so changes go through Apartments.
+      if (room.apartment_id) throw Errors.conflict("This room is an apartment's unit. Edit it from Apartments.", "APARTMENT_UNIT");
+      if (body.active === false && room.active) {
+        const booked = await tx.maybeOne(
+          `SELECT 1 FROM reservations WHERE room_id = $1 AND (status = 'checked_in' OR (status IN ('confirmed', 'pending_payment', 'hold') AND check_out > $2::date)) LIMIT 1`,
+          [request.params.id, businessToday()],
+        );
+        if (booked) throw Errors.conflict("This room has upcoming or in-house stays. Move or cancel them first.", "ROOM_HAS_BOOKINGS");
+      }
+      if (roomNumber && roomNumber !== room.room_number) {
+        const taken = await tx.maybeOne(`SELECT 1 FROM rooms WHERE property_id = $1 AND room_number = $2 AND id <> $3`, [principal.propertyId, roomNumber, request.params.id]);
+        if (taken) throw Errors.conflict(`Room ${roomNumber} already exists`, "ROOM_NUMBER_TAKEN");
+      }
+      await tx.exec(
+        `UPDATE rooms SET room_number = coalesce($2, room_number), room_type = coalesce($3, room_type),
+                          nightly_rate_kobo = coalesce($4, nightly_rate_kobo), capacity = coalesce($5, capacity), active = coalesce($6, active)
+          WHERE id = $1`,
+        [request.params.id, roomNumber ?? null, roomType ?? null, body.nightlyRateKobo ?? null, body.capacity ?? null, body.active ?? null],
+      );
+      const action = body.active === false ? "room.deactivated" : body.active === true && !room.active ? "room.reactivated" : "room.updated";
+      await recordEvent(tx, {
+        propertyId: principal.propertyId,
+        actorId: principal.userId,
+        action,
+        entityType: "room",
+        entityId: request.params.id,
+        details: { roomNumber, roomType, nightlyRateKobo: body.nightlyRateKobo, capacity: body.capacity, active: body.active },
+        outbox: { reference: `Room ${roomNumber ?? room.room_number}` },
+      });
+      return { id: request.params.id };
     });
   });
 

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowRight, BedDouble, CalendarDays, Check, Clock3, Coffee, CreditCard, KeyRound, LayoutDashboard, LogOut, Menu, Settings2, Users, Utensils, X } from "lucide-react";
+import { ArrowRight, BedDouble, Building2, CalendarDays, Check, Clock3, Coffee, CreditCard, KeyRound, LayoutDashboard, LogOut, Menu, Settings2, Users, Utensils, X } from "lucide-react";
 import { api, errorMessage, type Permission, type Property, type Reference, type User } from "@/lib/api";
 import { applyProperty, initials, longDateLabel, optionLabel, propertyHour, text } from "./format";
 import { Field, Modal, useAction } from "./ui";
+import { ApartmentsSection } from "./sections/apartments";
 import { InventorySection } from "./sections/inventory";
 import { OverviewSection } from "./sections/overview";
 import { PaymentsSection } from "./sections/payments";
@@ -19,7 +20,8 @@ const NAVIGATION: ReadonlyArray<{ label: string; icon: typeof LayoutDashboard; p
   { label: "Overview", icon: LayoutDashboard, permission: "dashboard:read", description: "Here’s what’s happening across your property today." },
   { label: "Reservations", icon: CalendarDays, permission: "reservations:read", description: "Stays, arrivals, departures and guest payments." },
   { label: "Payments", icon: CreditCard, permission: "payments:read", description: "The payment register, transfer confirmation and exceptions." },
-  { label: "Rooms", icon: BedDouble, permission: "rooms:read", description: "Room readiness and current stays." },
+  { label: "Apartments", icon: Building2, permission: "rooms:read", description: "Website listings: details, photos, prices, publishing and bookings." },
+  { label: "Rooms", icon: BedDouble, permission: "rooms:read", description: "Room readiness, rates and current stays." },
   { label: "Restaurant POS", icon: Utensils, permission: "pos:read", description: "Restaurant sales, receipts and cashier shifts." },
   { label: "Inventory", icon: Coffee, permission: "inventory:read", description: "Store items and the stock movement ledger." },
   { label: "Team & attendance", icon: Users, permission: "staff:read", description: "Staff accounts and attendance." },
@@ -334,6 +336,7 @@ export function Workspace() {
           {current?.label === "Overview" && <OverviewSection {...sectionProps} onOpen={setActive} />}
           {current?.label === "Reservations" && <ReservationsSection {...sectionProps} />}
           {current?.label === "Payments" && <PaymentsSection {...sectionProps} />}
+          {current?.label === "Apartments" && <ApartmentsSection {...sectionProps} />}
           {current?.label === "Rooms" && <RoomsSection {...sectionProps} />}
           {current?.label === "Restaurant POS" && <PosSection {...sectionProps} />}
           {current?.label === "Inventory" && <InventorySection {...sectionProps} />}

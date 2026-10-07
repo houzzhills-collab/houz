@@ -21,11 +21,15 @@ export const ReservationRow = Type.Object({
   status: Type.String(),
   payment_status: Type.String(),
   source: Type.String(),
+  notes: Nullable(Type.String()),
   created_at: Timestamp,
   actions: Type.Object(
     {
       next_statuses: Type.Array(Type.String(), { description: "Stay changes the caller may make now" }),
       record_payment: Type.Boolean(),
+      edit: Type.Union([Type.Literal("full"), Type.Literal("stay_end"), Type.Literal("contact"), Type.Literal("none")], {
+        description: "What PATCH /{id}/details may change: everything, guest details and check-out (in-house), guest details only (awaiting online payment), or nothing",
+      }),
     },
     { description: "What the caller may do with this reservation" },
   ),
@@ -87,6 +91,53 @@ export const UpdateReservationSchema = {
     { additionalProperties: false },
   ),
   response: { 200: Type.Object({ reservation: Type.Object({ id: Uuid, status: Type.String() }) }), ...errorResponses(401, 403, 404, 409, 422) },
+};
+
+export const UpdateReservationDetailsSchema = {
+  tags: ["reservations"],
+  summary: "Edit a reservation's guest details, dates, room or guest count",
+  description:
+    "Only sent fields change; null clears email, phone or notes. `actions.edit` on the reservation says what may change. Moving dates or room re-checks availability, capacity and minimum stay, and re-prices the stay: the same room keeps its agreed nightly price, another room uses its current rate. The payment status is recalculated.",
+  security,
+  params: IdParams,
+  body: Type.Object(
+    {
+      name: Type.Optional(Text(120)),
+      email: Type.Optional(Nullable(Type.String({ format: "email", maxLength: 254 }))),
+      phone: Type.Optional(Nullable(Type.String({ maxLength: 32, pattern: "^[+0-9 ()-]*$" }))),
+      notes: Type.Optional(Nullable(Type.String({ maxLength: 2000 }))),
+      guests: Type.Optional(Type.Integer({ minimum: 1, maximum: 12 })),
+      roomId: Type.Optional(Uuid),
+      checkIn: Type.Optional(IsoDate),
+      checkOut: Type.Optional(IsoDate),
+    },
+    { additionalProperties: false, minProperties: 1 },
+  ),
+  response: { 200: Type.Object({ reservation: ReservationRow }), ...errorResponses(401, 403, 404, 409, 422) },
+};
+
+export const ReservationPaymentsSchema = {
+  tags: ["reservations"],
+  summary: "Payments recorded against a reservation",
+  security,
+  params: IdParams,
+  response: {
+    200: Type.Object({
+      payments: Type.Array(
+        Type.Object({
+          id: Uuid,
+          amount_kobo: KoboString,
+          method: Type.String(),
+          status: Type.String(),
+          reference: Nullable(Type.String()),
+          recorded_by: Nullable(Type.String()),
+          created_at: Timestamp,
+          settled_at: Nullable(Timestamp),
+        }),
+      ),
+    }),
+    ...errorResponses(401, 403, 404),
+  },
 };
 
 export const RecordPaymentSchema = {

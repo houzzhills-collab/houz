@@ -26,7 +26,7 @@ export default function MobileMenu({ base = "" }: { base?: "" | "/" }) {
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-40 cursor-default bg-black/20"
           />
-          <div className="absolute right-0 top-12 z-50 w-52 rounded-2xl bg-white p-3 text-sm text-stone-700 shadow-2xl">
+          <div className="absolute right-0 top-12 z-50 w-52 rounded-2xl bg-white p-3 text-[15px] text-stone-700 shadow-2xl">
             <a href={`${base}#apartments`} onClick={() => setOpen(false)} className="block rounded-xl px-3 py-3 hover:bg-stone-100">
               Apartments
             </a>

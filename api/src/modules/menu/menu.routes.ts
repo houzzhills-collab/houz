@@ -16,7 +16,8 @@ type MenuRow = {
   name: string;
   category: string;
   price_kobo: string;
-  recipe: { itemId: string; name: string; quantity: number }[];
+  active: boolean;
+  recipe: { itemId: string; name: string; quantity: number; unit: string; onHand: number }[];
 };
 
 /** Validates recipe lines and replaces the item's recipe. */
@@ -56,9 +57,10 @@ const menuRoutes: FastifyPluginAsyncTypebox = async (app) => {
       preHandler: app.authorize("pos:read"),
       schema: {
         tags: ["menu"],
-        summary: "Active menu items with prices and recipes",
+        summary: "Menu items with prices and recipes",
+        description: "Each recipe line carries the stock item's unit and quantity on hand. Archived items are left out unless `includeArchived` is true.",
         security,
-        querystring: Type.Object(PageQuery, { additionalProperties: false }),
+        querystring: Type.Object({ ...PageQuery, includeArchived: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
         response: {
           200: Type.Object({
             menu: Type.Array(
@@ -67,7 +69,8 @@ const menuRoutes: FastifyPluginAsyncTypebox = async (app) => {
                 name: Type.String(),
                 category: Type.String(),
                 price_kobo: KoboString,
-                recipe: Type.Array(Type.Object({ itemId: Uuid, name: Type.String(), quantity: Type.Number() })),
+                active: Type.Boolean(),
+                recipe: Type.Array(Type.Object({ itemId: Uuid, name: Type.String(), quantity: Type.Number(), unit: Type.String(), onHand: Type.Number() })),
               }),
             ),
             nextCursor: NextCursor,
@@ -82,16 +85,17 @@ const menuRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const cursor = decodeCursor(request.query.cursor, 3);
       const rows = await withConnection(app.db, (sql) =>
         sql.rows<MenuRow>(
-          `SELECT m.id, m.name, m.category, m.price_kobo::text,
-                  coalesce((SELECT json_agg(json_build_object('itemId', i.id, 'name', i.name, 'quantity', mr.quantity::float8) ORDER BY i.name)
+          `SELECT m.id, m.name, m.category, m.price_kobo::text, m.active,
+                  coalesce((SELECT json_agg(json_build_object('itemId', i.id, 'name', i.name, 'quantity', mr.quantity::float8,
+                                                              'unit', i.unit, 'onHand', i.quantity::float8) ORDER BY i.name)
                               FROM menu_recipes mr JOIN inventory_items i ON i.id = mr.inventory_item_id
                              WHERE mr.menu_item_id = m.id), '[]'::json) AS recipe
              FROM menu_items m
-            WHERE m.property_id = $1 AND m.active
+            WHERE m.property_id = $1 AND (m.active OR $6)
               AND ($2::text IS NULL OR (m.category, m.name, m.id) > ($2::text, $3::text, $4::uuid))
             ORDER BY m.category, m.name, m.id
             LIMIT $5`,
-          [principal.propertyId, cursor?.[0] ?? null, cursor?.[1] ?? null, cursor?.[2] ?? null, limit + 1],
+          [principal.propertyId, cursor?.[0] ?? null, cursor?.[1] ?? null, cursor?.[2] ?? null, limit + 1, request.query.includeArchived ?? false],
         ),
       );
       const page = toPage(rows, limit, (row) => [row.category, row.name, row.id]);
@@ -179,7 +183,7 @@ const menuRoutes: FastifyPluginAsyncTypebox = async (app) => {
         await recordEvent(tx, {
           propertyId: principal.propertyId,
           actorId: principal.userId,
-          action: body.active === false ? "menu.item_archived" : "menu.item_updated",
+          action: body.active === false ? "menu.item_archived" : body.active === true ? "menu.item_restored" : "menu.item_updated",
           entityType: "menu_item",
           entityId: request.params.id,
           details: { changes: body },

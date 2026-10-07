@@ -1,4 +1,14 @@
 import type {
+  Apartment,
+  ApartmentStatus,
+  ApartmentBookings,
+  ApartmentInput,
+  InventoryItemChanges,
+  ReservationChanges,
+  ReservationPayment,
+  RoomChanges,
+  StaffProfileChanges,
+  StockMovement,
   AttendanceEvent,
   ChangePasswordInput,
   CreatedPosOrder,
@@ -69,6 +79,9 @@ export interface ApiClient {
     create(input: NewReservationInput): Promise<Reservation>;
     /** `reason` is required (and audited) for cancellations and no-shows. */
     updateStatus(id: string, status: ReservationStatus, reason?: string): Promise<void>;
+    /** Guest details, dates, room or guest count; `actions.edit` says what may change. */
+    updateDetails(id: string, changes: ReservationChanges): Promise<Reservation>;
+    payments(id: string): Promise<ReservationPayment[]>;
     recordPayment(id: string, input: RecordPaymentInput): Promise<{ paymentStatus: "pending" | "settled" }>;
   };
   payments: {
@@ -84,6 +97,8 @@ export interface ApiClient {
     list(): Promise<Room[]>;
     create(input: NewRoomInput): Promise<{ created: number; roomIds: string[] }>;
     updateStatus(id: string, status: RoomStatus, note?: string): Promise<void>;
+    /** Edits a room, or retires (`active: false`) / restores it. */
+    update(id: string, changes: RoomChanges): Promise<void>;
     history(id: string): Promise<RoomHistoryEntry[]>;
   };
   staff: {
@@ -91,6 +106,8 @@ export interface ApiClient {
     /** `temporaryPassword` is returned once when the server generated it. */
     create(input: NewStaffInput): Promise<{ id: string; userId: string; temporaryPassword?: string }>;
     updateStatus(id: string, status: EmploymentStatus): Promise<void>;
+    /** A role change signs the member out everywhere. */
+    updateProfile(id: string, changes: StaffProfileChanges): Promise<{ sessionsRevoked: number }>;
     /** Issues a one-time temporary password and signs the member out everywhere. */
     resetPassword(id: string): Promise<{ temporaryPassword: string }>;
   };
@@ -99,15 +116,31 @@ export interface ApiClient {
     record(eventType: AttendanceEvent): Promise<void>;
   };
   inventory: {
-    list(): Promise<InventoryItem[]>;
+    list(options?: { includeArchived?: boolean }): Promise<InventoryItem[]>;
     createItem(input: NewInventoryItemInput): Promise<{ id: string }>;
+    /** Edits, archives (`active: false`) or restores an item. Quantity changes only through movements. */
+    updateItem(id: string, changes: InventoryItemChanges): Promise<void>;
+    movements(id: string): Promise<StockMovement[]>;
     recordMovement(input: StockMovementInput): Promise<void>;
   };
   menu: {
-    list(): Promise<MenuItem[]>;
+    list(options?: { includeArchived?: boolean }): Promise<MenuItem[]>;
     create(input: NewMenuItemInput): Promise<{ id: string }>;
     /** Edits or archives (`active: false`) an item; past receipts keep the old values. */
     update(id: string, changes: MenuItemChanges): Promise<void>;
+  };
+  apartments: {
+    /** Draft and published apartments, or only those with `status` (e.g. archived). */
+    list(options?: { status?: ApartmentStatus }): Promise<Apartment[]>;
+    /** Created as a draft; upload photos, then publish. */
+    create(input: ApartmentInput): Promise<Apartment>;
+    /** Edit, publish, unpublish (`draft`) or archive. */
+    update(id: string, changes: ApartmentInput): Promise<Apartment>;
+    uploadImages(id: string, files: File[], caption?: string): Promise<{ uploaded: number; duplicates: number; apartment: Apartment }>;
+    updateImage(id: string, imageId: string, changes: { caption?: string | null; isCover?: true }): Promise<Apartment>;
+    reorderImages(id: string, imageIds: string[]): Promise<Apartment>;
+    deleteImage(id: string, imageId: string): Promise<Apartment>;
+    bookings(filters?: { apartmentId?: string; q?: string }): Promise<ApartmentBookings>;
   };
   pos: {
     /** The current user's open cashier shift and today's orders. */

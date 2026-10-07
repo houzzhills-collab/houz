@@ -1,5 +1,9 @@
 import { ApiError, type ApiClient } from "./client";
 import type {
+  Apartment,
+  ApartmentBookings,
+  ReservationPayment,
+  StockMovement,
   AvailableRoomType,
   CreatedPosOrder,
   Dashboard,
@@ -39,8 +43,8 @@ import type {
  * - Money/order writes send an `Idempotency-Key` header.
  */
 
-type Method = "GET" | "POST" | "PATCH";
-type RequestOptions = { body?: unknown; idempotencyKey?: string; authenticated?: boolean; retryOnExpiry?: boolean };
+type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+type RequestOptions = { body?: unknown; form?: FormData; idempotencyKey?: string; authenticated?: boolean; retryOnExpiry?: boolean };
 type TokenResponse = { accessToken: string; user: User };
 
 const PREFIX = "/api/v1";
@@ -59,14 +63,15 @@ export function createHttpClient(baseUrl: string): ApiClient {
 
   async function send(method: Method, path: string, options: RequestOptions): Promise<Response> {
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (options.body !== undefined) headers["Content-Type"] = "application/json";
+    // The browser sets the multipart boundary itself for form uploads.
+    if (options.body !== undefined && !options.form) headers["Content-Type"] = "application/json";
     if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
     if (options.authenticated !== false && accessToken) headers.Authorization = `Bearer ${accessToken}`;
     try {
       return await fetch(`${origin}${PREFIX}${path}`, {
         method,
         headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
         credentials: "include",
         cache: "no-store",
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -118,11 +123,11 @@ export function createHttpClient(baseUrl: string): ApiClient {
   }
 
   /** Reads every page of a keyset-paginated collection. */
-  async function listAll<K extends string, T>(path: string, key: K): Promise<T[]> {
+  async function listAll<K extends string, T>(path: string, key: K, params: Record<string, string> = {}): Promise<T[]> {
     const items: T[] = [];
     let cursor: string | null = null;
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const query: URLSearchParams = new URLSearchParams({ limit: String(PAGE_SIZE), ...(cursor ? { cursor } : {}) });
+      const query: URLSearchParams = new URLSearchParams({ ...params, limit: String(PAGE_SIZE), ...(cursor ? { cursor } : {}) });
       const result: Record<K, T[]> & { nextCursor: string | null } = await request("GET", `${path}?${query.toString()}`);
       items.push(...result[key]);
       cursor = result.nextCursor;
@@ -253,6 +258,9 @@ export function createHttpClient(baseUrl: string): ApiClient {
       async updateStatus(id, status, reason) {
         await request<unknown>("PATCH", `/management/reservations/${encodeURIComponent(id)}`, { body: reason ? { status, reason } : { status } });
       },
+      updateDetails: async (id, changes) =>
+        (await request<{ reservation: Reservation }>("PATCH", `/management/reservations/${encodeURIComponent(id)}/details`, { body: changes })).reservation,
+      payments: async (id) => (await request<{ payments: ReservationPayment[] }>("GET", `/management/reservations/${encodeURIComponent(id)}/payments`)).payments,
       recordPayment: async (id, input) =>
         (
           await request<{ payment: { paymentStatus: "pending" | "settled" } }>("POST", `/management/reservations/${encodeURIComponent(id)}/payments`, {
@@ -289,6 +297,9 @@ export function createHttpClient(baseUrl: string): ApiClient {
         await request<unknown>("PATCH", `/management/rooms/${encodeURIComponent(id)}`, { body: note ? { status, note } : { status } });
       },
       history: async (id) => (await request<{ history: RoomHistoryEntry[] }>("GET", `/management/rooms/${encodeURIComponent(id)}/history`)).history,
+      async update(id, changes) {
+        await request<unknown>("PATCH", `/management/rooms/${encodeURIComponent(id)}/details`, { body: changes });
+      },
     },
 
     staff: {
@@ -298,6 +309,7 @@ export function createHttpClient(baseUrl: string): ApiClient {
       async updateStatus(id, employmentStatus) {
         await request<unknown>("PATCH", `/management/staff/${encodeURIComponent(id)}`, { body: { employmentStatus } });
       },
+      updateProfile: (id, changes) => request<{ sessionsRevoked: number }>("PATCH", `/management/staff/${encodeURIComponent(id)}/profile`, { body: changes }),
       resetPassword: (id) => request<{ temporaryPassword: string }>("POST", `/management/staff/${encodeURIComponent(id)}/temporary-password`),
     },
 
@@ -309,18 +321,44 @@ export function createHttpClient(baseUrl: string): ApiClient {
     },
 
     inventory: {
-      list: () => listAll<"items", InventoryItem>("/management/inventory", "items"),
+      list: (options) => listAll<"items", InventoryItem>("/management/inventory", "items", options?.includeArchived ? { includeArchived: "true" } : {}),
       createItem: async (input) => (await request<{ item: { id: string } }>("POST", "/management/inventory/items", { body: input })).item,
       async recordMovement(input) {
         await request<unknown>("POST", "/management/inventory/movements", { body: input });
       },
+      async updateItem(id, changes) {
+        await request<unknown>("PATCH", `/management/inventory/items/${encodeURIComponent(id)}`, { body: changes });
+      },
+      movements: async (id) => (await request<{ movements: StockMovement[] }>("GET", `/management/inventory/items/${encodeURIComponent(id)}/movements`)).movements,
     },
 
     menu: {
-      list: () => listAll<"menu", MenuItem>("/management/menu", "menu"),
+      list: (options) => listAll<"menu", MenuItem>("/management/menu", "menu", options?.includeArchived ? { includeArchived: "true" } : {}),
       create: async (input) => (await request<{ item: { id: string } }>("POST", "/management/menu", { body: input })).item,
       async update(id, changes) {
         await request<unknown>("PATCH", `/management/menu/${encodeURIComponent(id)}`, { body: changes });
+      },
+    },
+
+    apartments: {
+      list: (options) => listAll<"apartments", Apartment>("/management/apartments", "apartments", options?.status ? { status: options.status } : {}),
+      create: async (input) => (await request<{ apartment: Apartment }>("POST", "/management/apartments", { body: input })).apartment,
+      update: async (id, changes) => (await request<{ apartment: Apartment }>("PATCH", `/management/apartments/${encodeURIComponent(id)}`, { body: changes })).apartment,
+      uploadImages(id, files, caption) {
+        const form = new FormData();
+        if (caption) form.append("caption", caption);
+        for (const file of files) form.append("file", file, file.name);
+        return request("POST", `/management/apartments/${encodeURIComponent(id)}/images`, { form });
+      },
+      updateImage: async (id, imageId, changes) =>
+        (await request<{ apartment: Apartment }>("PATCH", `/management/apartments/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, { body: changes })).apartment,
+      reorderImages: async (id, imageIds) =>
+        (await request<{ apartment: Apartment }>("PUT", `/management/apartments/${encodeURIComponent(id)}/images/order`, { body: { imageIds } })).apartment,
+      deleteImage: async (id, imageId) =>
+        (await request<{ apartment: Apartment }>("DELETE", `/management/apartments/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`)).apartment,
+      async bookings(filters = {}) {
+        const query = new URLSearchParams({ limit: String(PAGE_SIZE), ...(filters.apartmentId ? { apartmentId: filters.apartmentId } : {}), ...(filters.q ? { q: filters.q } : {}) });
+        return request<ApartmentBookings>("GET", `/management/apartments/bookings?${query.toString()}`);
       },
     },
 

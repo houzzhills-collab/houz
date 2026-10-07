@@ -9,7 +9,7 @@ import { NewReservationModal, ReservationTable, useReservationActions } from "./
 
 export function OverviewSection({ notify, refreshKey, can, reference, property, onOpen }: SectionProps & { onOpen: (section: string) => void }) {
   const dashboard = useResource<Dashboard>(() => api.dashboard.get(), String(refreshKey));
-  const actions = useReservationActions(notify, () => void dashboard.reload(), reference);
+  const actions = useReservationActions(notify, () => void dashboard.reload(), reference, dashboard.data?.reservations ?? []);
   const [creating, setCreating] = useState(false);
   const data = dashboard.data;
   const metrics = data?.metrics ?? {};
@@ -122,7 +122,7 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
               All reservations
             </button>
           </div>
-          <ReservationTable rows={data?.reservations ?? []} reference={reference} onStatus={(row, status) => void actions.changeStatus(row, status)} onPay={actions.startPayment} />
+          <ReservationTable rows={data?.reservations ?? []} reference={reference} onStatus={(row, status) => void actions.changeStatus(row, status)} onPay={actions.startPayment} onOpen={actions.openReservation} />
         </section>
       )}
 
@@ -184,7 +184,7 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         </article>
       </section>
 
-      {actions.paymentModal}
+      {actions.dialogs}
       {creating && (
         <NewReservationModal
           notify={notify}

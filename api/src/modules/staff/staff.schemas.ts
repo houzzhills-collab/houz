@@ -77,6 +77,29 @@ export const UpdateStaffSchema = {
   response: { 200: Type.Object({ id: Uuid, employmentStatus: Type.String() }), ...errorResponses(401, 403, 404, 409, 422) },
 };
 
+export const UpdateStaffProfileSchema = {
+  tags: ["staff"],
+  summary: "Edit a staff member's details or role",
+  description:
+    "Only sent fields change; null clears an optional field. A role change signs the member out everywhere so the new permissions apply at once. Only the owner can assign manager, finance or auditor roles.",
+  security,
+  params: IdParams,
+  body: Type.Object(
+    {
+      fullName: Type.Optional(Text(120)),
+      role: Type.Optional(StringEnum(ASSIGNABLE_ROLES)),
+      employeeNumber: Type.Optional(Text(40)),
+      department: Type.Optional(Text(80)),
+      jobTitle: Type.Optional(Text(80)),
+      phone: Type.Optional(Nullable(Type.String({ maxLength: 32, pattern: "^[+0-9 ()-]*$" }))),
+      emergencyContact: Type.Optional(Nullable(Type.String({ maxLength: 160 }))),
+      startDate: Type.Optional(Nullable(IsoDate)),
+    },
+    { additionalProperties: false, minProperties: 1 },
+  ),
+  response: { 200: Type.Object({ id: Uuid, sessionsRevoked: Type.Integer() }), ...errorResponses(401, 403, 404, 409, 422) },
+};
+
 export const ResetPasswordSchema = {
   tags: ["staff"],
   summary: "Issue a new temporary password",

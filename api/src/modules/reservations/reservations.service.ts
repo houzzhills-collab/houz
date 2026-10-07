@@ -27,6 +27,7 @@ export type ReservationRow = {
   status: string;
   payment_status: string;
   source: string;
+  notes: string | null;
   created_at: Date;
   cursor_created: string;
 };
@@ -35,7 +36,7 @@ export type ReservationRow = {
 export const RESERVATION_SELECT = `
   SELECT r.id, r.reference, g.full_name AS guest_name, g.email, g.phone, r.room_id, coalesce(ro.room_type, r.room_type) AS room_type,
          ro.room_number, r.check_in::text, r.check_out::text, r.guests_count, r.amount_kobo::text,
-         coalesce(paid.total, 0)::text AS paid_kobo, r.status, r.payment_status, r.source, r.created_at, r.created_at::text AS cursor_created
+         coalesce(paid.total, 0)::text AS paid_kobo, r.status, r.payment_status, r.source, r.notes, r.created_at, r.created_at::text AS cursor_created
     FROM reservations r
     JOIN guests g ON g.id = r.guest_id
     LEFT JOIN rooms ro ON ro.id = r.room_id
@@ -52,8 +53,20 @@ export function withActions<T extends { status: string; payment_status: string; 
     actions: {
       next_statuses: writer ? (TRANSITIONS[row.status] ?? []).filter((next) => !((next === "checked_in" || next === "no_show") && row.check_in > today)) : [],
       record_payment: writer && !CLOSED_STAYS.has(row.status) && (row.payment_status === "unpaid" || row.payment_status === "part_paid"),
+      edit: writer ? editScope(row.status) : ("none" as const),
     },
   }));
+}
+
+type EditScope = "full" | "stay_end" | "contact" | "none";
+
+/** What staff may change on a reservation in this state (see updateReservationDetails). */
+function editScope(status: string): EditScope {
+  if (status === "confirmed") return "full";
+  if (status === "checked_in") return "stay_end";
+  // Online checkout is priced and in progress; only the guest's details can be corrected.
+  if (status === "pending_payment" || status === "hold") return "contact";
+  return "none";
 }
 
 function likePattern(term: string): string {
@@ -300,5 +313,152 @@ export async function recordStaffPayment(
       });
     }
     return { created: true, payment: { id: payment.id, duplicate: false, paid: paymentStatus === "paid", paymentStatus: status } };
+  });
+}
+
+export type ReservationDetailsInput = {
+  name?: string;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+  guests?: number;
+  roomId?: string;
+  checkIn?: string;
+  checkOut?: string;
+};
+
+/**
+ * Corrects a reservation. Guest details can change on any open stay; the
+ * room, dates and guest count only on confirmed stays (an in-house stay may
+ * change its check-out and guest count). A stay that moves is re-checked for
+ * availability and re-priced, and its payment status recalculated.
+ */
+export async function updateReservationDetails(app: FastifyInstance, principal: Principal, id: string, input: ReservationDetailsInput) {
+  const name = input.name?.trim();
+  if (name === "") throw Errors.unprocessable("Enter the guest's name", "VALIDATION_FAILED");
+  const rules = await app.settings.current();
+  return withTransaction(app.db, async (tx) => {
+    const current = await tx.maybeOne<{
+      status: string;
+      reference: string;
+      guest_id: string;
+      room_id: string | null;
+      check_in: string;
+      check_out: string;
+      guests_count: number;
+      amount_kobo: string;
+    }>(
+      `SELECT status, reference, guest_id, room_id, check_in::text, check_out::text, guests_count, amount_kobo::text
+         FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+      [id, principal.propertyId],
+    );
+    if (!current) throw Errors.notFound("Reservation not found");
+    const scope = editScope(current.status);
+    if (scope === "none") throw Errors.conflict(`A ${current.status.replaceAll("_", " ")} reservation can no longer be changed`, "RESERVATION_CLOSED");
+
+    const roomId = input.roomId ?? current.room_id;
+    const checkIn = input.checkIn ?? current.check_in;
+    const checkOut = input.checkOut ?? current.check_out;
+    const guests = input.guests ?? current.guests_count;
+    const moved = roomId !== current.room_id || checkIn !== current.check_in || checkOut !== current.check_out;
+    if (scope === "contact" && (moved || guests !== current.guests_count)) {
+      throw Errors.conflict("This booking is awaiting online payment; only the guest's details can change", "RESERVATION_IN_CHECKOUT");
+    }
+    if (scope === "stay_end" && (roomId !== current.room_id || checkIn !== current.check_in)) {
+      throw Errors.conflict("The guest is checked in; only the check-out date and guest count can change", "GUEST_IN_HOUSE");
+    }
+
+    let amount = BigInt(current.amount_kobo);
+    if (moved || guests !== current.guests_count) {
+      if (!roomId) throw Errors.conflict("Assign a room first", "ROOM_REQUIRED");
+      const nights = nightsBetween(checkIn, checkOut);
+      if (scope === "stay_end") {
+        if (nights < 1 || nights > rules.maxStayNights) throw Errors.unprocessable(`Choose a stay of 1 to ${rules.maxStayNights} nights`, "INVALID_STAY");
+        if (checkOut < businessToday()) throw Errors.unprocessable("Check-out cannot be in the past", "INVALID_STAY");
+      } else if (moved) {
+        validateStay(rules, checkIn, checkOut);
+      }
+      const room = await tx.maybeOne<{ id: string; room_type: string; nightly_rate_kobo: string; status: string; capacity: number; active: boolean }>(
+        `SELECT id, room_type, nightly_rate_kobo::text, status, capacity, active FROM rooms WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+        [roomId, principal.propertyId],
+      );
+      if (!room) throw Errors.notFound("Room not found");
+      if (room.capacity < guests) throw Errors.conflict("The room cannot accommodate that many guests", "ROOM_CAPACITY");
+      if (roomId !== current.room_id) {
+        if (!room.active) throw Errors.conflict("That room is not in use", "ROOM_INACTIVE");
+        if (room.status === "maintenance" || room.status === "out_of_order") throw Errors.conflict("The room is out of service", "ROOM_OUT_OF_SERVICE");
+      }
+      if (moved) {
+        await assertMinimumStay(tx, room.id, nights);
+        await expireLapsedHolds(tx, { roomId: room.id, limit: 100 });
+        const clash = await tx.maybeOne(
+          `SELECT 1 FROM reservations r WHERE r.room_id = $1 AND r.id <> $4 AND ${OCCUPYING_STAY_SQL} AND r.check_in < $3::date AND r.check_out > $2::date LIMIT 1`,
+          [room.id, checkIn, checkOut, id],
+        );
+        if (clash) throw Errors.conflict("The room is not available for those dates", "ROOM_UNAVAILABLE");
+        // Same room: keep the nightly price agreed at booking. Another room: its current rate.
+        const oldNights = BigInt(nightsBetween(current.check_in, current.check_out));
+        const nightly = roomId === current.room_id ? BigInt(current.amount_kobo) / oldNights : BigInt(room.nightly_rate_kobo);
+        amount = nightly * BigInt(nights);
+        const settled = await tx.one<{ committed: string }>(
+          `SELECT coalesce(sum(amount_kobo) FILTER (WHERE status = 'settled' OR (status = 'pending' AND method <> 'online')), 0)::text AS committed FROM payments WHERE reservation_id = $1`,
+          [id],
+        );
+        if (BigInt(settled.committed) > amount) throw Errors.conflict("Payments already exceed the new stay total. Shortening is not possible without a refund.", "OVERPAID");
+      }
+      await tx.exec(
+        `UPDATE reservations SET room_id = $2, room_type = $3, check_in = $4, check_out = $5, guests_count = $6, amount_kobo = $7, updated_at = now() WHERE id = $1`,
+        [id, room.id, room.room_type, checkIn, checkOut, guests, amount.toString()],
+      );
+      await refreshReservationPayment(tx, id);
+    }
+
+    const nullable = (value: string | null | undefined) => (value === undefined ? undefined : optionalTextOf(value));
+    const email = input.email === undefined ? undefined : (optionalTextOf(input.email)?.toLowerCase() ?? null);
+    const phone = nullable(input.phone);
+    const notes = nullable(input.notes);
+    if (name !== undefined || email !== undefined || phone !== undefined) {
+      await tx.exec(
+        `UPDATE guests SET full_name = coalesce($2, full_name), email = CASE WHEN $3 THEN $4 ELSE email END, phone = CASE WHEN $5 THEN $6 ELSE phone END WHERE id = $1`,
+        [current.guest_id, name ?? null, email !== undefined, email ?? null, phone !== undefined, phone ?? null],
+      );
+    }
+    if (notes !== undefined) await tx.exec(`UPDATE reservations SET notes = $2, updated_at = now() WHERE id = $1`, [id, notes]);
+
+    await recordEvent(tx, {
+      propertyId: principal.propertyId,
+      actorId: principal.userId,
+      action: "reservation.updated",
+      entityType: "reservation",
+      entityId: id,
+      details: {
+        ...(moved ? { from: { roomId: current.room_id, checkIn: current.check_in, checkOut: current.check_out }, to: { roomId, checkIn, checkOut } } : {}),
+        ...(guests !== current.guests_count ? { guests } : {}),
+        ...(amount !== BigInt(current.amount_kobo) ? { amountKobo: { from: current.amount_kobo, to: amount.toString() } } : {}),
+        guestDetailsChanged: name !== undefined || email !== undefined || phone !== undefined,
+        notesChanged: notes !== undefined,
+      },
+      outbox: { type: "reservation.updated", reference: current.reference },
+    });
+    return { reservation: await getReservation(tx, principal, id) };
+  });
+}
+
+function optionalTextOf(value: string | null): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export async function listReservationPayments(app: FastifyInstance, principal: Principal, id: string) {
+  return withConnection(app.db, async (sql) => {
+    const exists = await sql.maybeOne(`SELECT 1 FROM reservations WHERE id = $1 AND property_id = $2`, [id, principal.propertyId]);
+    if (!exists) throw Errors.notFound("Reservation not found");
+    const payments = await sql.rows<{ id: string; amount_kobo: string; method: string; status: string; reference: string | null; recorded_by: string | null; created_at: Date; settled_at: Date | null }>(
+      `SELECT p.id, p.amount_kobo::text, p.method, p.status, p.provider_reference AS reference, u.full_name AS recorded_by, p.created_at, p.settled_at
+         FROM payments p LEFT JOIN users u ON u.id = p.recorded_by
+        WHERE p.reservation_id = $1 ORDER BY p.created_at`,
+      [id],
+    );
+    return { payments };
   });
 }

@@ -4,7 +4,7 @@ import { withConnection, withTransaction } from "../../db/sql.js";
 import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
 import { NextCursor, PageQuery, decodeCursor, toPage } from "../../lib/pagination.js";
-import { KoboInput, KoboString, Nullable, Quantity, QuantityString, StringEnum, Text, Uuid, errorResponses, toQuantityText } from "../../lib/schemas.js";
+import { IdParams, KoboInput, KoboString, Nullable, Quantity, QuantityString, StringEnum, Text, Timestamp, Uuid, errorResponses, toQuantityText } from "../../lib/schemas.js";
 import { optionalText } from "../../lib/text.js";
 import { requirePrincipal } from "../auth/principal.js";
 import { alertLowStock } from "../email/notifications.js";
@@ -19,6 +19,7 @@ type InventoryRow = {
   reorder_level: string;
   cost_kobo: string;
   low_stock: boolean;
+  active: boolean;
 };
 
 const MOVEMENT_TYPES = { receive: "purchase", adjust: "adjustment", wastage: "wastage" } as const;
@@ -40,9 +41,10 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
       preHandler: app.authorize("inventory:read"),
       schema: {
         tags: ["inventory"],
-        summary: "Active inventory items with low-stock indicators",
+        summary: "Inventory items with low-stock indicators",
+        description: "Archived items are left out unless `includeArchived` is true.",
         security,
-        querystring: Type.Object(PageQuery, { additionalProperties: false }),
+        querystring: Type.Object({ ...PageQuery, includeArchived: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
         response: {
           200: Type.Object({
             items: Type.Array(
@@ -55,6 +57,7 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
                 reorder_level: QuantityString,
                 cost_kobo: KoboString,
                 low_stock: Type.Boolean(),
+                active: Type.Boolean(),
               }),
             ),
             nextCursor: NextCursor,
@@ -69,12 +72,12 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const cursor = decodeCursor(request.query.cursor, 2);
       const rows = await withConnection(app.db, (sql) =>
         sql.rows<InventoryRow>(
-          `SELECT id, name, sku, unit, quantity::text, reorder_level::text, cost_kobo::text, (quantity <= reorder_level) AS low_stock
+          `SELECT id, name, sku, unit, quantity::text, reorder_level::text, cost_kobo::text, (active AND quantity <= reorder_level) AS low_stock, active
              FROM inventory_items
-            WHERE property_id = $1 AND active AND ($2::text IS NULL OR (name, id) > ($2::text, $3::uuid))
+            WHERE property_id = $1 AND (active OR $5) AND ($2::text IS NULL OR (name, id) > ($2::text, $3::uuid))
             ORDER BY name, id
             LIMIT $4`,
-          [principal.propertyId, cursor?.[0] ?? null, cursor?.[1] ?? null, limit + 1],
+          [principal.propertyId, cursor?.[0] ?? null, cursor?.[1] ?? null, limit + 1, request.query.includeArchived ?? false],
         ),
       );
       const page = toPage(rows, limit, (row) => [row.name, row.id]);
@@ -137,6 +140,118 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
         return created;
       });
       return reply.status(201).send({ item });
+    },
+  );
+
+  app.patch(
+    "/items/:id",
+    {
+      preHandler: app.authorize("inventory:write"),
+      schema: {
+        tags: ["inventory"],
+        summary: "Edit, archive or restore an inventory item",
+        description:
+          "Quantity changes only through movements, so the ledger stays complete. `active: false` archives the item (refused while an active menu item's recipe uses it); its movement history is kept.",
+        security,
+        params: IdParams,
+        body: Type.Object(
+          {
+            name: Type.Optional(Text(120)),
+            sku: Type.Optional(Nullable(Type.String({ maxLength: 60 }))),
+            unit: Type.Optional(Text(20)),
+            reorderLevel: Type.Optional(Quantity({ minimum: 0 })),
+            costKobo: Type.Optional(KoboInput),
+            active: Type.Optional(Type.Boolean()),
+          },
+          { additionalProperties: false, minProperties: 1 },
+        ),
+        response: { 200: Type.Object({ id: Uuid }), ...errorResponses(401, 403, 404, 409, 422) },
+      },
+    },
+    async (request) => {
+      const principal = requirePrincipal(request);
+      const body = request.body;
+      const name = body.name?.trim();
+      const unit = body.unit?.trim();
+      if (name === "" || unit === "") throw Errors.unprocessable("Name and unit cannot be blank", "VALIDATION_FAILED");
+      const reorderLevel = body.reorderLevel === undefined ? null : quantityText(body.reorderLevel, "reorderLevel");
+      return withTransaction(app.db, async (tx) => {
+        const item = await tx.maybeOne<{ name: string; active: boolean }>(
+          `SELECT name, active FROM inventory_items WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+          [request.params.id, principal.propertyId],
+        );
+        if (!item) throw Errors.notFound("Inventory item not found");
+        if (body.active === false && item.active) {
+          const used = await tx.rows<{ name: string }>(
+            `SELECT m.name FROM menu_recipes mr JOIN menu_items m ON m.id = mr.menu_item_id WHERE mr.inventory_item_id = $1 AND m.active ORDER BY m.name`,
+            [request.params.id],
+          );
+          if (used.length > 0) throw Errors.conflict(`Used in the recipe for ${used.map((row) => row.name).join(", ")}. Change those menu items first.`, "ITEM_IN_RECIPE");
+        }
+        if (body.sku?.trim()) {
+          const taken = await tx.maybeOne(`SELECT 1 FROM inventory_items WHERE property_id = $1 AND sku = $2 AND id <> $3`, [principal.propertyId, body.sku.trim(), request.params.id]);
+          if (taken) throw Errors.conflict("Another item already uses this SKU", "SKU_TAKEN");
+        }
+        await tx.exec(
+          `UPDATE inventory_items SET name = coalesce($2, name), sku = CASE WHEN $3 THEN $4 ELSE sku END, unit = coalesce($5, unit),
+                                      reorder_level = coalesce($6::numeric, reorder_level), cost_kobo = coalesce($7, cost_kobo), active = coalesce($8, active)
+            WHERE id = $1`,
+          [request.params.id, name ?? null, body.sku !== undefined, optionalText(body.sku ?? undefined), unit ?? null, reorderLevel, body.costKobo ?? null, body.active ?? null],
+        );
+        await recordEvent(tx, {
+          propertyId: principal.propertyId,
+          actorId: principal.userId,
+          action: body.active === false ? "inventory.item_archived" : body.active === true && !item.active ? "inventory.item_restored" : "inventory.item_updated",
+          entityType: "inventory_item",
+          entityId: request.params.id,
+          details: { name, sku: body.sku, unit, reorderLevel, costKobo: body.costKobo, active: body.active },
+          outbox: { type: "inventory.stock_changed", reference: name ?? item.name },
+        });
+        return { id: request.params.id };
+      });
+    },
+  );
+
+  app.get(
+    "/items/:id/movements",
+    {
+      preHandler: app.authorize("inventory:read"),
+      schema: {
+        tags: ["inventory"],
+        summary: "An item's stock movements, newest first (latest 200)",
+        security,
+        params: IdParams,
+        response: {
+          200: Type.Object({
+            movements: Type.Array(
+              Type.Object({
+                id: Uuid,
+                type: Type.String(),
+                quantity_delta: QuantityString,
+                reason: Nullable(Type.String()),
+                reference: Nullable(Type.String()),
+                recorded_by: Nullable(Type.String()),
+                created_at: Timestamp,
+              }),
+            ),
+          }),
+          ...errorResponses(401, 403, 404),
+        },
+      },
+    },
+    async (request) => {
+      const principal = requirePrincipal(request);
+      return withConnection(app.db, async (sql) => {
+        const exists = await sql.maybeOne(`SELECT 1 FROM inventory_items WHERE id = $1 AND property_id = $2`, [request.params.id, principal.propertyId]);
+        if (!exists) throw Errors.notFound("Inventory item not found");
+        const movements = await sql.rows<{ id: string; type: string; quantity_delta: string; reason: string | null; reference: string | null; recorded_by: string | null; created_at: Date }>(
+          `SELECT sm.id, sm.movement_type AS type, sm.quantity_delta::text, sm.reason, sm.reference, u.full_name AS recorded_by, sm.created_at
+             FROM stock_movements sm LEFT JOIN users u ON u.id = sm.recorded_by
+            WHERE sm.item_id = $1 ORDER BY sm.created_at DESC, sm.id DESC LIMIT 200`,
+          [request.params.id],
+        );
+        return { movements };
+      });
     },
   );
 

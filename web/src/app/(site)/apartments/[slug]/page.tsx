@@ -76,17 +76,17 @@ function ApartmentPage() {
         <div className="absolute right-[-8%] top-[-40%] h-[520px] w-[58%] rotate-[-16deg] rounded-[45%] border border-white/10" />
         <SiteNav base="/" />
         <div className="relative z-10 mx-auto max-w-7xl px-6 pb-14 pt-6 lg:px-10 lg:pb-16">
-          <Link href="/#apartments" className="inline-flex items-center gap-2 text-sm text-[#d6dfd9] hover:text-white">
+          <Link href="/#apartments" className="inline-flex items-center gap-2 text-[15px] text-[#d6dfd9] hover:text-white">
             <ArrowLeft size={15} /> All apartments
           </Link>
           {apartment ? (
             <>
-              <p className="mt-8 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[.28em] text-[#e0b876]">
+              <p className="mt-8 flex items-center gap-3 text-xs font-semibold uppercase tracking-[.28em] text-[#e0b876]">
                 <span className="h-px w-8 bg-[#e0b876]" /> {apartment.category}
               </p>
               <h1 className="mt-4 max-w-3xl font-serif text-[clamp(2.5rem,8vw,4.5rem)] leading-[1] tracking-[-.03em]">{apartment.name}</h1>
               {apartment.summary && <p className="mt-5 max-w-xl text-base leading-7 text-[#cad5cf]">{apartment.summary}</p>}
-              <div className="mt-7 flex flex-wrap gap-2 text-xs text-[#dce5df]">
+              <div className="mt-7 flex flex-wrap gap-2 text-[13px] text-[#dce5df]">
                 <Chip icon={<MapPin size={13} />}>{[apartment.location.area, apartment.location.city, apartment.location.state].filter(Boolean).join(", ")}</Chip>
                 <Chip icon={<Users size={13} />}>Up to {plural(apartment.capacity.maxGuests, "guest")}</Chip>
                 <Chip icon={<BedDouble size={13} />}>{plural(apartment.capacity.bedrooms, "bedroom")}</Chip>
@@ -102,8 +102,8 @@ function ApartmentPage() {
       {current?.missing ? (
         <section className="mx-auto max-w-3xl px-6 py-24 text-center">
           <p className="font-serif text-4xl text-[#263b34]">This apartment isn&apos;t available.</p>
-          <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-stone-500">It may have been renamed or taken off the site. Our other apartments are a click away.</p>
-          <Link href="/#apartments" className="site-cta mt-8 inline-flex items-center gap-3 rounded-full bg-[#263b34] px-7 py-4 text-sm font-semibold text-white hover:bg-[#1a2c26]">
+          <p className="mx-auto mt-4 max-w-md text-[15px] leading-7 text-stone-500">It may have been renamed or taken off the site. Our other apartments are a click away.</p>
+          <Link href="/#apartments" className="site-cta mt-8 inline-flex items-center gap-3 rounded-full bg-[#263b34] px-7 py-4 text-[15px] font-semibold text-white hover:bg-[#1a2c26]">
             See all apartments <ArrowUpRight size={16} />
           </Link>
         </section>
@@ -112,7 +112,7 @@ function ApartmentPage() {
           {current?.error ? (
             <div className="rounded-[28px] border border-[#e6dfd2] bg-white/60 px-6 py-14 text-center">
               <p className="font-serif text-2xl text-[#263b34]">{current.error}</p>
-              <button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#31715d] hover:text-[#1f4d3f]">
+              <button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 text-[15px] font-semibold text-[#31715d] hover:text-[#1f4d3f]">
                 Try again <ArrowUpRight size={15} />
               </button>
             </div>
@@ -139,7 +139,7 @@ function ApartmentPage() {
 
               {apartment.description && (
                 <Block eyebrow="About this apartment" title="Make yourself at home.">
-                  <p className="whitespace-pre-line text-sm leading-7 text-stone-600">{apartment.description}</p>
+                  <p className="whitespace-pre-line text-[15px] leading-7 text-stone-600">{apartment.description}</p>
                 </Block>
               )}
 
@@ -148,14 +148,14 @@ function ApartmentPage() {
               <List eyebrow="On site" title="Facilities" items={apartment.facilities} />
 
               <Block eyebrow="Good to know" title="Your stay">
-                <dl className="divide-y divide-[#e6dfd2] rounded-2xl bg-white/60 text-sm">
+                <dl className="divide-y divide-[#e6dfd2] rounded-2xl bg-white/60 text-[15px]">
                   <Row label="Check-in" value={`From ${apartment.stayRules.checkInTime}`} />
                   <Row label="Check-out" value={`By ${apartment.stayRules.checkOutTime}`} />
                   <Row label="Minimum stay" value={plural(apartment.stayRules.minimumNights, "night")} />
                   {BigInt(apartment.pricing.cautionFeeKobo) > 0n && <Row label="Caution fee" value={`${money(apartment.pricing.cautionFeeKobo)} · separate from the stay total`} />}
                   <Row label="Location" value={[apartment.location.area, apartment.location.city, apartment.location.state, apartment.location.country].filter(Boolean).join(", ")} />
                 </dl>
-                <p className="mt-3 text-xs text-stone-500">The exact address and directions are in your confirmation email.</p>
+                <p className="mt-3 text-[13px] text-stone-500">The exact address and directions are in your confirmation email.</p>
               </Block>
 
               <List eyebrow="Please note" title="House rules" items={apartment.houseRules} />
@@ -178,9 +178,9 @@ function ApartmentPage() {
           <div className="sticky bottom-0 z-40 flex items-center justify-between gap-4 border-t border-[#e6dfd2] bg-[#f8f6f1]/95 px-6 py-4 backdrop-blur-md lg:hidden">
             <p>
               <b className="font-serif text-xl text-[#263b34]">{money(apartment.pricing.nightlyRateKobo)}</b>
-              <span className="text-xs text-stone-500"> / night</span>
+              <span className="text-[13px] text-stone-500"> / night</span>
             </p>
-            <a href="#book" className="inline-flex items-center gap-2 rounded-full bg-[#263b34] px-5 py-3 text-sm font-semibold text-white">
+            <a href="#book" className="inline-flex items-center gap-2 rounded-full bg-[#263b34] px-5 py-3 text-[15px] font-semibold text-white">
               Check availability <ArrowUpRight size={15} />
             </a>
           </div>
@@ -204,8 +204,8 @@ function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: s
   return (
     <div className="rounded-2xl bg-white/60 p-4">
       <span className="text-[#31715d]">{icon}</span>
-      <span className="mt-3 block text-xs text-stone-500">{label}</span>
-      <b className="mt-1 block text-sm">{value}</b>
+      <span className="mt-3 block text-[13px] text-stone-500">{label}</span>
+      <b className="mt-1 block text-[15px]">{value}</b>
     </div>
   );
 }
@@ -213,7 +213,7 @@ function Fact({ icon, label, value }: { icon: ReactNode; label: string; value: s
 function Block({ eyebrow, title, children }: { eyebrow: string; title: string; children: ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-[.25em] text-[#b28247]">{eyebrow}</p>
+      <p className="text-xs font-bold uppercase tracking-[.25em] text-[#b28247]">{eyebrow}</p>
       <h2 className="mb-6 mt-3 font-serif text-3xl tracking-tight text-[#263b34]">{title}</h2>
       {children}
     </div>
@@ -226,7 +226,7 @@ function List({ eyebrow, title, items }: { eyebrow: string; title: string; items
     <Block eyebrow={eyebrow} title={title}>
       <ul className="grid gap-3 sm:grid-cols-2">
         {items.map((item) => (
-          <li key={item} className="flex items-center gap-3 text-sm text-stone-700">
+          <li key={item} className="flex items-center gap-3 text-[15px] text-stone-700">
             <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#e3eee8] text-[#31715d]">
               <Check size={14} />
             </span>
@@ -250,8 +250,8 @@ function Row({ label, value }: { label: string; value: string }) {
 function Policy({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-2xl bg-white/60 p-5">
-      <b className="text-sm text-[#263b34]">{title}</b>
-      <p className="mt-2 whitespace-pre-line text-xs leading-6 text-stone-600">{text}</p>
+      <b className="text-[15px] text-[#263b34]">{title}</b>
+      <p className="mt-2 whitespace-pre-line text-[13px] leading-6 text-stone-600">{text}</p>
     </div>
   );
 }

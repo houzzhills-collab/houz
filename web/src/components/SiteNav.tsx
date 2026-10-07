@@ -9,10 +9,10 @@ export default function SiteNav({ base = "" }: { base?: "" | "/" }) {
         <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#d4a25e] font-serif text-xl font-bold text-[#25372f]">H</span>
         <span>
           <b className="block font-serif text-lg tracking-tight">Houzzhills</b>
-          <small className="block text-[9px] uppercase tracking-[.25em] text-[#c8d3cd]">Apartments · Kaduna</small>
+          <small className="block text-[10px] uppercase tracking-[.25em] text-[#c8d3cd]">Apartments · Kaduna</small>
         </span>
       </Link>
-      <div className="hidden items-center gap-8 text-sm text-[#d1dbd5] md:flex">
+      <div className="hidden items-center gap-8 text-[15px] text-[#d1dbd5] md:flex">
         <a href={`${base}#apartments`} className="hover:text-white">Apartments</a>
         <a href={`${base}#gallery`} className="hover:text-white">Gallery</a>
         <a href={`${base}#experience`} className="hover:text-white">The experience</a>

@@ -1,20 +1,94 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownRight, Plus } from "lucide-react";
-import { api, type StockMovementInput } from "@/lib/api";
-import { money, text, toKobo } from "../format";
-import { Empty, Field, InlineError, Modal, useAction, useResource, type SectionProps } from "../ui";
+import { Archive, ArrowDownRight, Pencil, Plus, RotateCcw } from "lucide-react";
+import { api, errorMessage, type InventoryItem, type StockMovementInput } from "@/lib/api";
+import { dateTimeLabel, humanize, money, text, toKobo } from "../format";
+import { DetailList, Drawer, Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type SectionProps } from "../ui";
+
+const quantity = (value: string | number, unit: string) => `${Number(value)} ${unit}`;
+
+function MovementHistory({ item, refreshKey }: { item: InventoryItem; refreshKey: number }) {
+  const movements = useResource(() => api.inventory.movements(item.id), `${item.id}:${refreshKey}`);
+  return (
+    <section className="detail-section">
+      <h3>Stock ledger</h3>
+      <InlineError message={movements.error} />
+      {movements.data?.length ? (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>WHEN</th>
+                <th>MOVEMENT</th>
+                <th>CHANGE</th>
+                <th>REASON</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.data.map((movement) => (
+                <tr key={movement.id}>
+                  <td>{dateTimeLabel(movement.created_at)}</td>
+                  <td>{humanize(movement.type)}</td>
+                  <td className="booking-amount">
+                    {Number(movement.quantity_delta) > 0 ? "+" : ""}
+                    {Number(movement.quantity_delta)}
+                  </td>
+                  <td>
+                    {movement.reason ?? "—"}
+                    {movement.reference ? ` · ${movement.reference}` : ""}
+                    {movement.recorded_by ? <small className="field-hint"> {movement.recorded_by}</small> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        !movements.loading && <Empty text="No movements recorded yet." />
+      )}
+    </section>
+  );
+}
 
 export function InventorySection({ notify, refreshKey, can, reference }: SectionProps) {
-  const items = useResource(() => api.inventory.list(), String(refreshKey));
-  const [dialog, setDialog] = useState<"item" | "movement" | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const items = useResource(() => api.inventory.list({ includeArchived: true }), String(refreshKey));
+  const [dialog, setDialog] = useState<{ kind: "item"; item: InventoryItem | null } | { kind: "movement"; itemId?: string } | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const action = useAction();
-  const list = items.data ?? [];
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const all = items.data ?? [];
+  const active = all.filter((item) => item.active !== false);
+  const list = showArchived ? all : active;
+  const archived = all.length - active.length;
+  const open = all.find((item) => item.id === openId) ?? null;
+  const writer = can("inventory:write");
+
+  const close = () => {
+    action.clearError();
+    setDialog(null);
+  };
   const done = async (message: string) => {
     notify(message);
-    setDialog(null);
+    close();
     await items.reload();
+  };
+
+  const setActive = async (item: InventoryItem, next: boolean) => {
+    const accepted = await confirm(
+      next
+        ? { title: `Restore ${item.name}?`, message: "It returns to the stock list and can be used in recipes again.", confirmLabel: "Restore item" }
+        : { title: `Archive ${item.name}?`, message: "It leaves the stock list and can't be used in recipes. Its ledger is kept and you can restore it later.", confirmLabel: "Archive item", danger: true },
+    );
+    if (accepted === null) return;
+    try {
+      await api.inventory.updateItem(item.id, { active: next });
+      notify(`${item.name} ${next ? "restored" : "archived"}`);
+      await items.reload();
+    } catch (error) {
+      notify(errorMessage(error, "Unable to update the item"));
+    }
   };
 
   return (
@@ -22,16 +96,21 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
       <div className="panel-heading bookings-heading">
         <div>
           <h2>Stock control</h2>
-          <p>Every change to stock is recorded as a movement with its reason and staff member.</p>
+          <p>Every change to stock is a movement with its reason and staff member. Restaurant sales deduct stock through menu recipes.</p>
         </div>
         <div className="heading-actions">
-          <span className="booking-count">{list.filter((item) => item.low_stock).length} low stock</span>
-          {can("inventory:write") && (
+          {archived > 0 && (
+            <label className="table-filter">
+              <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Show archived ({archived})
+            </label>
+          )}
+          <span className="booking-count">{active.filter((item) => item.low_stock).length} low stock</span>
+          {writer && (
             <>
-              <button className="button-secondary" onClick={() => setDialog("movement")} disabled={list.length === 0}>
+              <button className="button-secondary" onClick={() => setDialog({ kind: "movement" })} disabled={active.length === 0}>
                 <ArrowDownRight size={15} /> Record movement
               </button>
-              <button className="button-primary" onClick={() => setDialog("item")}>
+              <button className="button-primary" onClick={() => setDialog({ kind: "item", item: null })}>
                 <Plus size={16} /> Add item
               </button>
             </>
@@ -54,20 +133,16 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
             </thead>
             <tbody>
               {list.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} className={`row-link ${item.active === false ? "row-muted" : ""}`} onClick={() => setOpenId(item.id)}>
                   <td className="booking-amount">{item.name}</td>
                   <td>{item.sku ?? "—"}</td>
-                  <td>
-                    {Number(item.quantity)} {item.unit}
-                  </td>
-                  <td>
-                    {Number(item.reorder_level)} {item.unit}
-                  </td>
+                  <td>{quantity(item.quantity, item.unit)}</td>
+                  <td>{quantity(item.reorder_level, item.unit)}</td>
                   <td>{money(item.cost_kobo)}</td>
                   <td>
-                    <span className={`status ${item.low_stock ? "status-red" : "status-green"}`}>
+                    <span className={`status ${item.active === false || item.low_stock ? "status-red" : "status-green"}`}>
                       <i />
-                      {item.low_stock ? "Reorder needed" : "In stock"}
+                      {item.active === false ? "Archived" : item.low_stock ? "Reorder needed" : "In stock"}
                     </span>
                   </td>
                 </tr>
@@ -76,63 +151,115 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
           </table>
         </div>
       ) : (
-        !items.loading && <Empty text="No stock items yet. Add store items before configuring restaurant recipes." />
+        !items.loading && <Empty text="No stock items yet. Add store items, then link them to menu items so sales deduct stock." />
       )}
 
-      {dialog === "item" && (
+      {open && (
+        <Drawer
+          title={open.name}
+          subtitle={open.sku ? `SKU ${open.sku}` : undefined}
+          badge={
+            <span className={`status ${open.active === false || open.low_stock ? "status-red" : "status-green"}`}>
+              <i />
+              {open.active === false ? "Archived" : open.low_stock ? "Reorder needed" : "In stock"}
+            </span>
+          }
+          onClose={() => setOpenId(null)}
+          actions={
+            writer && (
+              <>
+                {open.active === false ? (
+                  <button className="button-secondary" onClick={() => void setActive(open, true)}>
+                    <RotateCcw size={15} /> Restore
+                  </button>
+                ) : (
+                  <button className="button-ghost-danger" onClick={() => void setActive(open, false)}>
+                    <Archive size={15} /> Archive
+                  </button>
+                )}
+                <span className="spacer" />
+                {open.active !== false && (
+                  <button className="button-secondary" onClick={() => setDialog({ kind: "movement", itemId: open.id })}>
+                    <ArrowDownRight size={15} /> Record movement
+                  </button>
+                )}
+                <button className="button-primary" onClick={() => setDialog({ kind: "item", item: open })}>
+                  <Pencil size={15} /> Edit item
+                </button>
+              </>
+            )
+          }
+        >
+          <DetailList
+            title="Stock"
+            rows={[
+              ["On hand", quantity(open.quantity, open.unit)],
+              ["Reorder at", quantity(open.reorder_level, open.unit)],
+              ["Unit cost", money(open.cost_kobo)],
+              ["Stock value", money(Number(open.cost_kobo) * Number(open.quantity))],
+            ]}
+          />
+          <MovementHistory item={open} refreshKey={refreshKey} />
+        </Drawer>
+      )}
+
+      {dialog?.kind === "item" && (
         <Modal
-          title="Add inventory item"
+          title={dialog.item ? `Edit ${dialog.item.name}` : "Add inventory item"}
+          description={dialog.item ? "To change the quantity on hand, record a movement so the ledger stays complete." : undefined}
+          submitLabel={dialog.item ? "Save changes" : "Add item"}
           busy={action.busy}
           error={action.error}
-          onClose={() => setDialog(null)}
+          onClose={close}
           onSubmit={(values) =>
             action.run(async () => {
-              await api.inventory.createItem({
-                name: text(values.get("name")),
-                sku: text(values.get("sku")),
-                unit: text(values.get("unit")),
-                quantity: Number(values.get("quantity")),
-                reorderLevel: Number(values.get("reorderLevel")),
-                costKobo: toKobo(values.get("cost")),
-              });
-              await done("Inventory item added");
+              const fields = { name: text(values.get("name")), unit: text(values.get("unit")), reorderLevel: Number(values.get("reorderLevel")), costKobo: toKobo(values.get("cost")) };
+              if (dialog.item) {
+                await api.inventory.updateItem(dialog.item.id, { ...fields, sku: text(values.get("sku")) || null });
+                await done(`${fields.name} updated`);
+              } else {
+                await api.inventory.createItem({ ...fields, sku: text(values.get("sku")), quantity: Number(values.get("quantity")) });
+                await done("Inventory item added");
+              }
             })
           }
         >
           <div className="form-row">
             <Field label="Item name">
-              <input name="name" required maxLength={120} />
+              <input name="name" required maxLength={120} defaultValue={dialog.item?.name} />
             </Field>
             <Field label="SKU (optional)">
-              <input name="sku" maxLength={60} />
+              <input name="sku" maxLength={60} defaultValue={dialog.item?.sku ?? ""} />
             </Field>
           </div>
           <div className="form-row">
             <Field label="Unit">
-              <input name="unit" defaultValue="unit" required maxLength={20} />
+              <input name="unit" defaultValue={dialog.item?.unit ?? "unit"} required maxLength={20} placeholder="bottle, kg, piece" />
             </Field>
-            <Field label="Opening quantity">
-              <input name="quantity" type="number" min="0" step="0.001" defaultValue="0" required />
-            </Field>
+            {!dialog.item && (
+              <Field label="Opening quantity">
+                <input name="quantity" type="number" min="0" step="0.001" defaultValue="0" required />
+              </Field>
+            )}
           </div>
           <div className="form-row">
             <Field label="Reorder at">
-              <input name="reorderLevel" type="number" min="0" step="0.001" defaultValue="0" required />
+              <input name="reorderLevel" type="number" min="0" step="0.001" defaultValue={dialog.item ? Number(dialog.item.reorder_level) : 0} required />
             </Field>
             <Field label="Unit cost (₦)">
-              <input name="cost" type="number" min="0" step="1" defaultValue="0" required />
+              <input name="cost" type="number" min="0" step="1" defaultValue={dialog.item ? Number(dialog.item.cost_kobo) / 100 : 0} required />
             </Field>
           </div>
         </Modal>
       )}
 
-      {dialog === "movement" && (
+      {dialog?.kind === "movement" && (
         <Modal
           title="Record stock movement"
-          description="Stock can never go below zero."
+          description="Receive deliveries, write off wastage, or correct a count. Stock can never go below zero."
           busy={action.busy}
           error={action.error}
-          onClose={() => setDialog(null)}
+          onClose={close}
           onSubmit={(values) =>
             action.run(async () => {
               await api.inventory.recordMovement({
@@ -146,10 +273,10 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
           }
         >
           <Field label="Inventory item">
-            <select name="itemId" required>
-              {list.map((item) => (
+            <select name="itemId" required defaultValue={dialog.itemId}>
+              {active.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name} · {Number(item.quantity)} {item.unit}
+                  {item.name} · {quantity(item.quantity, item.unit)}
                 </option>
               ))}
             </select>
@@ -164,7 +291,7 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
                 ))}
               </select>
             </Field>
-            <Field label="Quantity">
+            <Field label="Quantity" hint="For a count correction, use a negative number to reduce stock.">
               <input name="quantity" type="number" step="0.001" required />
             </Field>
           </div>
@@ -173,6 +300,7 @@ export function InventorySection({ notify, refreshKey, can, reference }: Section
           </Field>
         </Modal>
       )}
+      {confirmDialog}
     </section>
   );
 }

@@ -26,15 +26,15 @@ export default function AvailabilityWidget() {
   return (
     <form onSubmit={submit} className="grid w-full min-w-0 overflow-hidden rounded-2xl border border-white/15 bg-white/10 backdrop-blur-lg sm:grid-cols-[1fr_1fr_auto]">
       <label className="min-w-0 border-b border-white/10 p-5 text-left sm:border-b-0 sm:border-r">
-        <span className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[.16em] text-[#bfcfc6]"><CalendarDays size={13} /> Check in</span>
-        <input aria-label="Check in date" required type="date" min={minimumDate} value={dates.checkIn} onChange={(event) => { setDates({ ...dates, checkIn: event.target.value }); setError(""); }} className="min-w-0 w-full bg-transparent text-sm font-semibold text-white outline-none [color-scheme:dark]" />
+        <span className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[.16em] text-[#bfcfc6]"><CalendarDays size={13} /> Check in</span>
+        <input aria-label="Check in date" required type="date" min={minimumDate} value={dates.checkIn} onChange={(event) => { setDates({ ...dates, checkIn: event.target.value }); setError(""); }} className="min-w-0 w-full bg-transparent text-[15px] font-semibold text-white outline-none [color-scheme:dark]" />
       </label>
       <label className="min-w-0 border-b border-white/10 p-5 text-left sm:border-b-0 sm:border-r">
-        <span className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[.16em] text-[#bfcfc6]"><CalendarDays size={13} /> Check out</span>
-        <input aria-label="Check out date" required type="date" min={dates.checkIn || minimumDate} value={dates.checkOut} onChange={(event) => { setDates({ ...dates, checkOut: event.target.value }); setError(""); }} className="min-w-0 w-full bg-transparent text-sm font-semibold text-white outline-none [color-scheme:dark]" />
+        <span className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[.16em] text-[#bfcfc6]"><CalendarDays size={13} /> Check out</span>
+        <input aria-label="Check out date" required type="date" min={dates.checkIn || minimumDate} value={dates.checkOut} onChange={(event) => { setDates({ ...dates, checkOut: event.target.value }); setError(""); }} className="min-w-0 w-full bg-transparent text-[15px] font-semibold text-white outline-none [color-scheme:dark]" />
       </label>
-      <button type="submit" className="flex min-h-[76px] min-w-0 items-center justify-between gap-6 p-5 text-left text-sm font-semibold text-[#e4bc7b] transition hover:bg-white/10">Check availability <ArrowUpRight size={17} /></button>
-      {error && <p className="col-span-full border-t border-red-200/20 bg-red-950/20 px-5 py-2 text-left text-xs text-red-100">{error}</p>}
+      <button type="submit" className="flex min-h-[76px] min-w-0 items-center justify-between gap-6 p-5 text-left text-[15px] font-semibold text-[#e4bc7b] transition hover:bg-white/10">Check availability <ArrowUpRight size={17} /></button>
+      {error && <p className="col-span-full border-t border-red-200/20 bg-red-950/20 px-5 py-2 text-left text-[13px] text-red-100">{error}</p>}
     </form>
   );
 }

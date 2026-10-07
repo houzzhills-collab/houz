@@ -15,6 +15,8 @@ const Room = Type.Object({
   capacity: Type.Integer(),
   status: Type.String(),
   active: Type.Boolean(),
+  // Set when the room is an apartment's unit; such rooms are edited from Apartments.
+  apartment_id: Nullable(Uuid),
   stay: Nullable(Type.Object({ reference: Type.Optional(Type.String()), guest: Type.Optional(Type.String()), checkOut: IsoDate })),
   next_statuses: Type.Array(StringEnum(ROOM_STATUSES), { description: "States the caller may set next" }),
 });
@@ -64,6 +66,26 @@ export const UpdateRoomSchema = {
   params: IdParams,
   body: Type.Object({ status: StringEnum(ROOM_STATUSES), note: Type.Optional(Type.String({ maxLength: 500 })) }, { additionalProperties: false }),
   response: { 200: Type.Object({ id: Uuid, status: Type.String() }), ...errorResponses(401, 403, 404, 409, 422) },
+};
+
+export const UpdateRoomDetailsSchema = {
+  tags: ["rooms"],
+  summary: "Edit a room, or take it out of / back into use",
+  description:
+    "Rate and capacity changes apply to new bookings only. `active: false` retires the room (refused while it has upcoming or in-house stays); nothing is deleted, so its history stays intact. Apartment units are edited from Apartments.",
+  security,
+  params: IdParams,
+  body: Type.Object(
+    {
+      roomNumber: Type.Optional(Text(20)),
+      roomType: Type.Optional(Text(80)),
+      nightlyRateKobo: Type.Optional(KoboInput),
+      capacity: Type.Optional(Type.Integer({ minimum: 1, maximum: 12 })),
+      active: Type.Optional(Type.Boolean()),
+    },
+    { additionalProperties: false, minProperties: 1 },
+  ),
+  response: { 200: Type.Object({ id: Uuid }), ...errorResponses(401, 403, 404, 409, 422) },
 };
 
 export const RoomHistorySchema = {

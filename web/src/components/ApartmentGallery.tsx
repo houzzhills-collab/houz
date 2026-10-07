@@ -49,15 +49,15 @@ export default function ApartmentGallery({ name, images }: { name: string; image
               className="object-cover transition duration-700 ease-out group-hover:scale-[1.06] group-hover:brightness-105 motion-reduce:transform-none"
             />
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#172d27]/45 via-transparent to-transparent opacity-40 transition-opacity duration-500 group-hover:opacity-100" />
-            <span aria-hidden="true" className="pointer-events-none absolute right-4 top-4 inline-flex translate-y-1 items-center gap-2 rounded-full border border-white/25 bg-[#172d27]/65 px-3 py-2 text-[11px] font-medium text-white opacity-0 shadow-lg backdrop-blur-md transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+            <span aria-hidden="true" className="pointer-events-none absolute right-4 top-4 inline-flex translate-y-1 items-center gap-2 rounded-full border border-white/25 bg-[#172d27]/65 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-lg backdrop-blur-md transition duration-300 group-hover:translate-y-0 group-hover:opacity-100">
               <Expand size={13} /> View photo
             </span>
-            {photo.caption && <span className="pointer-events-none absolute bottom-5 left-5 right-5 truncate text-sm font-medium text-white">{photo.caption}</span>}
+            {photo.caption && <span className="pointer-events-none absolute bottom-5 left-5 right-5 truncate text-[15px] font-medium text-white">{photo.caption}</span>}
           </button>
         ))}
       </div>
       {count > 1 && (
-        <button type="button" onClick={() => setOpen(0)} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#31715d] hover:text-[#1f4d3f]">
+        <button type="button" onClick={() => setOpen(0)} className="mt-4 inline-flex items-center gap-2 text-[15px] font-semibold text-[#31715d] hover:text-[#1f4d3f]">
           <Images size={15} /> View all {count} photos
         </button>
       )}
@@ -95,7 +95,7 @@ export default function ApartmentGallery({ name, images }: { name: string; image
                 </button>
               </>
             )}
-            <p className="absolute inset-x-0 -bottom-8 truncate text-center text-xs text-white/70 sm:-bottom-7">
+            <p className="absolute inset-x-0 -bottom-8 truncate text-center text-[13px] text-white/70 sm:-bottom-7">
               {open + 1} / {count}
               {current.caption ? ` · ${current.caption}` : ""}
             </p>

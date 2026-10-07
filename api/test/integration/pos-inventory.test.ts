@@ -50,7 +50,7 @@ describe.skipIf(!integration)("inventory, menu and restaurant POS", () => {
     expect((await app.inject({ method: "POST", url: `${M}/menu`, headers: manager.headers, payload: { name: "Bad", category: "X", priceKobo: 1, recipe: [{ itemId: randomUUID(), quantity: 1 }] } })).json()).toMatchObject({ code: "RECIPE_ITEM_NOT_FOUND" });
     expect((await app.inject({ method: "POST", url: `${M}/menu`, headers: manager.headers, payload: { name: "Bad", category: "X", priceKobo: 1, recipe: [{ itemId: eggs, quantity: 0 }] } })).statusCode).toBe(422);
     const menu = await app.inject({ url: `${M}/menu`, headers: cashier.headers });
-    expect(menu.json<{ menu: Array<{ id: string; recipe: unknown[] }> }>().menu.find((item) => item.id === breakfast)?.recipe).toEqual([{ itemId: eggs, name: "Eggs", quantity: 2 }]);
+    expect(menu.json<{ menu: Array<{ id: string; recipe: unknown[] }> }>().menu.find((item) => item.id === breakfast)?.recipe).toEqual([{ itemId: eggs, name: "Eggs", quantity: 2, unit: "piece", onHand: 10 }]);
     expect((await app.inject({ method: "PATCH", url: `${M}/menu/${breakfast}`, headers: manager.headers, payload: {} })).statusCode).toBe(422);
     expect((await app.inject({ method: "PATCH", url: `${M}/menu/${breakfast}`, headers: manager.headers, payload: { priceKobo: 700_000 } })).json()).toEqual({ item: { id: breakfast, active: true } });
   });

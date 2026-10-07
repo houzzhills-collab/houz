@@ -50,11 +50,11 @@ export default function ApartmentsSection() {
   return (
     <>
       {dated && (
-        <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-[#e6dfd2] bg-[#efeadf] px-5 py-3 text-sm text-[#263b34]">
+        <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-[#e6dfd2] bg-[#efeadf] px-5 py-3 text-[15px] text-[#263b34]">
           <span>
             Free from <b>{stayDate(dated.checkIn)}</b> to <b>{stayDate(dated.checkOut)}</b> · {plural(nightsBetween(dated.checkIn, dated.checkOut), "night")}
           </span>
-          <button type="button" onClick={clearDates} className="ml-auto flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-xs font-semibold text-[#31715d] hover:bg-white">
+          <button type="button" onClick={clearDates} className="ml-auto flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1.5 text-[13px] font-semibold text-[#31715d] hover:bg-white">
             <X size={13} /> Show all apartments
           </button>
         </div>
@@ -63,7 +63,7 @@ export default function ApartmentsSection() {
       {error && !apartments && (
         <div className="mt-12 rounded-[28px] border border-[#e6dfd2] bg-white/60 px-6 py-14 text-center">
           <p className="font-serif text-2xl text-[#263b34]">{error}</p>
-          <button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#31715d] hover:text-[#1f4d3f]">
+          <button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 text-[15px] font-semibold text-[#31715d] hover:text-[#1f4d3f]">
             Try again <ArrowUpRight size={15} />
           </button>
         </div>
@@ -74,11 +74,11 @@ export default function ApartmentsSection() {
       {apartments && apartments.length === 0 && (
         <div className="mt-12 rounded-[28px] border border-[#e6dfd2] bg-white/60 px-6 py-14 text-center">
           <p className="font-serif text-2xl text-[#263b34]">{dated ? "Nothing is free for those dates." : "New apartments are on the way."}</p>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-stone-500">
+          <p className="mx-auto mt-3 max-w-sm text-[15px] leading-6 text-stone-500">
             {dated ? "Try moving your dates by a day or two, or see every apartment and its open dates." : "Check back soon, or get in touch and we'll help you plan your stay."}
           </p>
           {dated && (
-            <button type="button" onClick={clearDates} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#31715d] hover:text-[#1f4d3f]">
+            <button type="button" onClick={clearDates} className="mt-5 inline-flex items-center gap-2 text-[15px] font-semibold text-[#31715d] hover:text-[#1f4d3f]">
               Show all apartments <ArrowUpRight size={15} />
             </button>
           )}
@@ -100,15 +100,15 @@ export default function ApartmentsSection() {
                 >
                   <div className="absolute inset-0 opacity-40 [background:linear-gradient(145deg,transparent_25%,#101d1833_100%)]" />
                   <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#101d18]/55 to-transparent" />
-                  <div className="absolute left-5 top-5 rounded-full bg-white/15 px-3 py-1.5 text-[10px] text-white backdrop-blur-md">
+                  <div className="absolute left-5 top-5 rounded-full bg-white/15 px-3 py-1.5 text-xs text-white backdrop-blur-md">
                     {String(index + 1).padStart(2, "0")} / {String(apartments.length).padStart(2, "0")}
                   </div>
-                  <div className="absolute right-5 top-5 rounded-full bg-white/15 px-3 py-1.5 text-[10px] text-white backdrop-blur-md">{apartment.category}</div>
+                  <div className="absolute right-5 top-5 rounded-full bg-white/15 px-3 py-1.5 text-xs text-white backdrop-blur-md">{apartment.category}</div>
                   <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between text-white">
                     <div>
-                      <p className="text-xs text-white/75">From</p>
+                      <p className="text-[13px] text-white/75">From</p>
                       <b className="font-serif text-2xl">{money(apartment.pricing.nightlyRateKobo)}</b>
-                      <span className="text-xs text-white/75"> / night</span>
+                      <span className="text-[13px] text-white/75"> / night</span>
                     </div>
                     <span className="apartment-card-arrow grid h-10 w-10 place-items-center rounded-full bg-white text-[#263b34]">
                       <ArrowUpRight size={17} />
@@ -116,8 +116,8 @@ export default function ApartmentsSection() {
                   </div>
                 </div>
                 <h3 className="mt-5 font-serif text-2xl text-[#263b34]">{apartment.name}</h3>
-                <p className="mt-1 line-clamp-2 text-sm text-stone-500">{apartment.summary ?? [apartment.location.area, apartment.location.city].filter(Boolean).join(", ")}</p>
-                <div className="mt-4 flex flex-wrap gap-4 text-xs text-stone-500">
+                <p className="mt-1 line-clamp-2 text-[15px] text-stone-500">{apartment.summary ?? [apartment.location.area, apartment.location.city].filter(Boolean).join(", ")}</p>
+                <div className="mt-4 flex flex-wrap gap-4 text-[13px] text-stone-500">
                   <span className="flex items-center gap-1.5">
                     <BedDouble size={13} /> {capacity.sizeSqm ? `${capacity.sizeSqm} sqm` : plural(capacity.bedrooms, "bedroom")}
                   </span>

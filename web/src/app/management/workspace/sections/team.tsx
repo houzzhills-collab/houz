@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Clock3, KeyRound, Plus } from "lucide-react";
+import { Clock3, KeyRound, Pencil, Plus } from "lucide-react";
 import { api, errorMessage, type EmploymentStatus, type Role, type Staff } from "@/lib/api";
-import { humanize, initials, optionLabel, text, timeLabel } from "../format";
-import { Empty, Field, InlineError, Modal, useAction, useResource, type SectionProps } from "../ui";
+import { dateLabel, dateTimeLabel, humanize, initials, optionLabel, text, timeLabel } from "../format";
+import { DetailList, Drawer, Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type SectionProps } from "../ui";
 
 /** Shows a one-time temporary password; it cannot be retrieved again. */
 function PasswordReveal({ name, password, onClose }: { name: string; password: string; onClose: () => void }) {
@@ -24,11 +24,21 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
   const staff = useResource(() => api.staff.list(), String(refreshKey));
   const [onboarding, setOnboarding] = useState(false);
   const [revealed, setRevealed] = useState<{ name: string; password: string } | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Staff | null>(null);
   const action = useAction();
+  const { confirm, dialog } = useConfirm();
   const list = staff.data ?? [];
+  const open = list.find((member) => member.id === openId) ?? null;
 
   const setStatus = async (member: Staff, status: EmploymentStatus) => {
-    if (status !== "active" && !window.confirm(`Mark ${member.full_name} as ${optionLabel(reference.employmentStatuses, status).toLowerCase()}? They will be signed out everywhere.`)) return;
+    const label = optionLabel(reference.employmentStatuses, status).toLowerCase();
+    const accepted = await confirm(
+      status === "active"
+        ? { title: `Reactivate ${member.full_name}?`, message: "They can sign in again.", confirmLabel: "Reactivate" }
+        : { title: `Mark ${member.full_name} as ${label}?`, message: "Their sign-in is disabled and they are signed out everywhere. Their records are kept.", confirmLabel: `Mark ${label}`, danger: true },
+    );
+    if (accepted === null) return;
     try {
       await api.staff.updateStatus(member.id, status);
       notify(`${member.full_name} updated`);
@@ -39,7 +49,8 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
   };
 
   const resetPassword = async (member: Staff) => {
-    if (!window.confirm(`Issue a new temporary password for ${member.full_name}? Their current sessions will end.`)) return;
+    const accepted = await confirm({ title: `Reset ${member.full_name}'s password?`, message: "A new temporary password is issued and shown once. Their current sessions end.", confirmLabel: "Reset password", danger: true });
+    if (accepted === null) return;
     try {
       const { temporaryPassword } = await api.staff.resetPassword(member.id);
       setRevealed({ name: member.full_name, password: temporaryPassword });
@@ -82,7 +93,7 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
               </thead>
               <tbody>
                 {list.map((member) => (
-                  <tr key={member.id}>
+                  <tr key={member.id} className={`row-link ${member.employment_status === "terminated" ? "row-muted" : ""}`} onClick={() => setOpenId(member.id)}>
                     <td>
                       <div className="guest-cell">
                         <span className="guest-avatar tone-blue">{initials(member.full_name)}</span>
@@ -109,7 +120,7 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
                       </span>
                     </td>
                     {can("staff:write") && (
-                      <td>
+                      <td onClick={(event) => event.stopPropagation()}>
                         {member.can_manage ? (
                           <div className="reservation-actions">
                             <select className="inline-select" value={member.employment_status} onChange={(event) => void setStatus(member, event.target.value as EmploymentStatus)} aria-label={`Employment status for ${member.full_name}`}>
@@ -230,6 +241,140 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
           </div>
         </Modal>
       )}
+      {open && (
+        <Drawer
+          title={open.full_name}
+          subtitle={`${open.job_title} · ${optionLabel(reference.roles, open.role)}`}
+          badge={
+            <span className={`status ${open.employment_status === "active" ? "status-green" : "status-gold"}`}>
+              <i />
+              {optionLabel(reference.employmentStatuses, open.employment_status)}
+            </span>
+          }
+          onClose={() => setOpenId(null)}
+          actions={
+            open.can_manage && (
+              <>
+                {open.employment_status === "active" ? (
+                  <button className="button-ghost-danger" onClick={() => void setStatus(open, "terminated")}>
+                    End employment
+                  </button>
+                ) : (
+                  <button className="button-secondary" onClick={() => void setStatus(open, "active")}>
+                    Reactivate
+                  </button>
+                )}
+                {open.employment_status === "active" && (
+                  <button className="button-secondary" onClick={() => void setStatus(open, "on_leave")}>
+                    On leave
+                  </button>
+                )}
+                <span className="spacer" />
+                <button className="button-secondary" onClick={() => void resetPassword(open)}>
+                  <KeyRound size={15} /> Reset password
+                </button>
+                <button className="button-primary" onClick={() => setEditing(open)}>
+                  <Pencil size={15} /> Edit
+                </button>
+              </>
+            )
+          }
+        >
+          <DetailList
+            title="Employment"
+            rows={[
+              ["Employee number", open.employee_number],
+              ["Department", open.department],
+              ["Job title", open.job_title],
+              ["Workspace role", optionLabel(reference.roles, open.role)],
+              ["Start date", open.start_date ? dateLabel(open.start_date) : null],
+            ]}
+          />
+          <DetailList
+            title="Contact"
+            rows={[
+              ["Work email", open.email],
+              ["Phone", open.phone],
+              ["Emergency contact", open.emergency_contact],
+            ]}
+          />
+          <DetailList
+            title="Attendance"
+            rows={[["Last clock event", open.last_attendance_event ? `${humanize(open.last_attendance_event)} · ${open.last_attendance_at ? dateTimeLabel(open.last_attendance_at) : ""}` : "No clock event yet"]]}
+          />
+        </Drawer>
+      )}
+
+      {editing && (
+        <Modal
+          title={`Edit ${editing.full_name}`}
+          description="Changing the role signs them out everywhere so the new access applies at once. The sign-in email can't be changed here."
+          busy={action.busy}
+          error={action.error}
+          wide
+          onClose={() => setEditing(null)}
+          onSubmit={(values) =>
+            action.run(async () => {
+              const optional = (name: string) => text(values.get(name)) || null;
+              const role = text(values.get("role")) as Role;
+              const result = await api.staff.updateProfile(editing.id, {
+                fullName: text(values.get("fullName")),
+                employeeNumber: text(values.get("employeeNumber")),
+                department: text(values.get("department")),
+                jobTitle: text(values.get("jobTitle")),
+                ...(role && role !== editing.role ? { role } : {}),
+                phone: optional("phone"),
+                emergencyContact: optional("emergencyContact"),
+                startDate: optional("startDate"),
+              });
+              setEditing(null);
+              notify(result.sessionsRevoked > 0 ? `${text(values.get("fullName"))} updated and signed out to apply the new role` : `${text(values.get("fullName"))} updated`);
+              await staff.reload();
+            })
+          }
+        >
+          <div className="form-row">
+            <Field label="Full name">
+              <input name="fullName" required maxLength={120} defaultValue={editing.full_name} />
+            </Field>
+            <Field label="Employee number">
+              <input name="employeeNumber" required maxLength={40} defaultValue={editing.employee_number} />
+            </Field>
+          </div>
+          <div className="form-row">
+            <Field label="Department">
+              <input name="department" required maxLength={80} defaultValue={editing.department} />
+            </Field>
+            <Field label="Job title">
+              <input name="jobTitle" required maxLength={80} defaultValue={editing.job_title} />
+            </Field>
+          </div>
+          <div className="form-row">
+            <Field label="Workspace role">
+              <select name="role" defaultValue={editing.role}>
+                {!reference.assignableRoles.some((role) => role.value === editing.role) && <option value={editing.role}>{optionLabel(reference.roles, editing.role)}</option>}
+                {reference.assignableRoles.map((role) => (
+                  <option key={role.value} value={role.value}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Start date">
+              <input name="startDate" type="date" defaultValue={editing.start_date ?? ""} />
+            </Field>
+          </div>
+          <div className="form-row">
+            <Field label="Phone">
+              <input name="phone" type="tel" maxLength={32} pattern="[\+0-9 \(\)\-]*" defaultValue={editing.phone ?? ""} />
+            </Field>
+            <Field label="Emergency contact">
+              <input name="emergencyContact" maxLength={160} defaultValue={editing.emergency_contact ?? ""} />
+            </Field>
+          </div>
+        </Modal>
+      )}
+      {dialog}
       {revealed && <PasswordReveal name={revealed.name} password={revealed.password} onClose={() => setRevealed(null)} />}
     </>
   );

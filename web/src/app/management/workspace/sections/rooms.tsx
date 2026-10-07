@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { History, Plus } from "lucide-react";
+import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
 import { api, errorMessage, type Reference, type Room, type RoomStatus } from "@/lib/api";
 import { dateLabel, dateTimeLabel, humanize, money, optionLabel, text, toKobo } from "../format";
-import { Empty, Field, InlineError, Modal, useAction, useResource, type SectionProps } from "../ui";
+import { DetailList, Drawer, Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
 
 function tone(status: string): string {
   if (status === "vacant_clean" || status === "inspected") return "status-green";
@@ -12,10 +12,11 @@ function tone(status: string): string {
   return "status-gold";
 }
 
-function HistoryModal({ room, reference, onClose }: { room: Room; reference: Reference; onClose: () => void }) {
+function RoomHistory({ room, reference }: { room: Room; reference: Reference }) {
   const history = useResource(() => api.rooms.history(room.id), room.id);
   return (
-    <Modal title={`Room ${room.room_number} history`} description="Latest 100 state changes" onClose={onClose}>
+    <section className="detail-section">
+      <h3>History</h3>
       <InlineError message={history.error} />
       <div className="activity-list">
         {(history.data ?? []).map((entry, index) => (
@@ -35,18 +36,69 @@ function HistoryModal({ room, reference, onClose }: { room: Room; reference: Ref
         ))}
         {history.data?.length === 0 && <Empty text="No changes recorded yet." />}
       </div>
+    </section>
+  );
+}
+
+/** Add a room, or edit one (rate and capacity changes apply to new bookings). */
+function RoomForm({ room, notify, onClose, onSaved }: { room: Room | null; notify: Notify; onClose: () => void; onSaved: () => void }) {
+  const action = useAction();
+  return (
+    <Modal
+      title={room ? `Edit room ${room.room_number}` : "Add a room"}
+      description={room ? "Rate and capacity changes apply to new bookings only." : undefined}
+      submitLabel={room ? "Save changes" : "Add room"}
+      busy={action.busy}
+      error={action.error}
+      onClose={onClose}
+      onSubmit={(values) =>
+        action.run(async () => {
+          const input = {
+            roomNumber: text(values.get("roomNumber")),
+            roomType: text(values.get("roomType")),
+            nightlyRateKobo: toKobo(values.get("rate")),
+            capacity: Number(values.get("capacity")),
+          };
+          if (room) await api.rooms.update(room.id, input);
+          else await api.rooms.create(input);
+          notify(room ? `Room ${input.roomNumber} updated` : "Room added");
+          onSaved();
+        })
+      }
+    >
+      <div className="form-row">
+        <Field label="Room number">
+          <input name="roomNumber" required maxLength={20} placeholder="e.g. 204" defaultValue={room?.room_number} />
+        </Field>
+        <Field label="Room category">
+          <input name="roomType" required maxLength={80} placeholder="e.g. Executive Suite" defaultValue={room?.room_type} />
+        </Field>
+      </div>
+      <div className="form-row">
+        <Field label="Nightly rate (₦)">
+          <input name="rate" type="number" min="0" step="1" required defaultValue={room ? Number(room.nightly_rate_kobo) / 100 : undefined} />
+        </Field>
+        <Field label="Guest capacity">
+          <input name="capacity" type="number" min="1" max="12" defaultValue={room?.capacity ?? 2} required />
+        </Field>
+      </div>
     </Modal>
   );
 }
 
 export function RoomsSection({ notify, refreshKey, can, reference }: SectionProps) {
   const rooms = useResource(() => api.rooms.list(), String(refreshKey));
-  const [adding, setAdding] = useState(false);
-  const [viewing, setViewing] = useState<Room | null>(null);
-  const action = useAction();
-  const list = rooms.data ?? [];
+  const [form, setForm] = useState<{ room: Room | null } | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [showRetired, setShowRetired] = useState(false);
+  const { confirm, dialog } = useConfirm();
+  const all = rooms.data ?? [];
+  const list = all.filter((room) => showRetired || room.active !== false);
+  const retired = all.filter((room) => room.active === false).length;
+  const open = all.find((room) => room.id === openId) ?? null;
   // The API withholds rates and guest details from roles that may not see them.
-  const showRates = list.some((room) => room.nightly_rate_kobo !== null);
+  const showRates = all.some((room) => room.nightly_rate_kobo !== null);
+  const editable = (room: Room) => can("rooms:create") && !room.apartment_id;
 
   const change = async (room: Room, status: RoomStatus) => {
     try {
@@ -58,17 +110,38 @@ export function RoomsSection({ notify, refreshKey, can, reference }: SectionProp
     }
   };
 
+  const setActive = async (room: Room, active: boolean) => {
+    const accepted = await confirm(
+      active
+        ? { title: `Restore room ${room.room_number}?`, message: "It becomes bookable again.", confirmLabel: "Restore room" }
+        : { title: `Retire room ${room.room_number}?`, message: "It can no longer be booked. Its history is kept and you can restore it later.", confirmLabel: "Retire room", danger: true },
+    );
+    if (accepted === null) return;
+    try {
+      await api.rooms.update(room.id, { active });
+      notify(`Room ${room.room_number} ${active ? "restored" : "retired"}`);
+      await rooms.reload();
+    } catch (error) {
+      notify(errorMessage(error, "Room update failed"));
+    }
+  };
+
   return (
     <section className="panel bookings-panel full-panel">
       <div className="panel-heading bookings-heading">
         <div>
           <h2>Room inventory</h2>
-          <p>Readiness, nightly rate and current stay. Rooms become occupied through check-in.</p>
+          <p>Readiness, nightly rate and current stay. Select a room for details, history and changes.</p>
         </div>
         <div className="heading-actions">
+          {retired > 0 && (
+            <label className="table-filter">
+              <input type="checkbox" checked={showRetired} onChange={(event) => setShowRetired(event.target.checked)} /> Show retired ({retired})
+            </label>
+          )}
           <span className="booking-count">{list.length} rooms</span>
           {can("rooms:create") && (
-            <button className="button-primary" onClick={() => setAdding(true)}>
+            <button className="button-primary" onClick={() => setForm({ room: null })}>
               <Plus size={16} /> Add room
             </button>
           )}
@@ -90,7 +163,7 @@ export function RoomsSection({ notify, refreshKey, can, reference }: SectionProp
             </thead>
             <tbody>
               {list.map((room) => (
-                <tr key={room.id}>
+                <tr key={room.id} className={`row-link ${room.active === false ? "row-muted" : ""}`} onClick={() => setOpenId(room.id)}>
                   <td className="booking-amount">{room.room_number}</td>
                   <td>
                     {room.room_type} · sleeps {room.capacity}
@@ -98,27 +171,24 @@ export function RoomsSection({ notify, refreshKey, can, reference }: SectionProp
                   {showRates && <td>{money(room.nightly_rate_kobo)}</td>}
                   <td>{room.stay ? (room.stay.guest ? `${room.stay.guest} · ${room.stay.reference ?? ""}` : `Due ${dateLabel(room.stay.checkOut)}`) : "—"}</td>
                   <td>
-                    <span className={`status ${tone(room.status)}`}>
+                    <span className={`status ${room.active === false ? "status-red" : tone(room.status)}`}>
                       <i />
-                      {optionLabel(reference.roomStatuses, room.status)}
+                      {room.active === false ? "Retired" : optionLabel(reference.roomStatuses, room.status)}
                     </span>
                   </td>
-                  <td>
-                    <div className="reservation-actions">
-                      {room.next_statuses.length > 0 && (
-                        <select className="inline-select" value="" onChange={(event) => event.target.value && void change(room, event.target.value as RoomStatus)} aria-label={`Update room ${room.room_number}`}>
-                          <option value="">Set status</option>
-                          {room.next_statuses.map((status) => (
-                            <option key={status} value={status}>
-                              {optionLabel(reference.roomStatuses, status)}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <button className="icon-text-button" onClick={() => setViewing(room)} aria-label={`History for room ${room.room_number}`}>
-                        <History size={14} />
-                      </button>
-                    </div>
+                  <td onClick={(event) => event.stopPropagation()}>
+                    {room.next_statuses.length > 0 && room.active !== false ? (
+                      <select className="inline-select" value="" onChange={(event) => event.target.value && void change(room, event.target.value as RoomStatus)} aria-label={`Update room ${room.room_number}`}>
+                        <option value="">Set status</option>
+                        {room.next_statuses.map((status) => (
+                          <option key={status} value={status}>
+                            {optionLabel(reference.roomStatuses, status)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="quiet-action">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -128,45 +198,83 @@ export function RoomsSection({ notify, refreshKey, can, reference }: SectionProp
       ) : (
         !rooms.loading && <Empty text="No rooms yet. Add room numbers, categories, nightly rates and capacities to start taking reservations." />
       )}
-      {viewing && <HistoryModal room={viewing} reference={reference} onClose={() => setViewing(null)} />}
-      {adding && (
-        <Modal
-          title="Add a room"
-          busy={action.busy}
-          error={action.error}
-          onClose={() => setAdding(false)}
-          onSubmit={(values) =>
-            action.run(async () => {
-              await api.rooms.create({
-                roomNumber: text(values.get("roomNumber")),
-                roomType: text(values.get("roomType")),
-                nightlyRateKobo: toKobo(values.get("rate")),
-                capacity: Number(values.get("capacity")),
-              });
-              notify("Room added");
-              setAdding(false);
-              await rooms.reload();
-            })
+
+      {open && (
+        <Drawer
+          title={`Room ${open.room_number}`}
+          subtitle={open.room_type}
+          badge={
+            <span className={`status ${open.active === false ? "status-red" : tone(open.status)}`}>
+              <i />
+              {open.active === false ? "Retired" : optionLabel(reference.roomStatuses, open.status)}
+            </span>
+          }
+          onClose={() => setOpenId(null)}
+          actions={
+            editable(open) && (
+              <>
+                {open.active === false ? (
+                  <button className="button-secondary" onClick={() => void setActive(open, true)}>
+                    <RotateCcw size={15} /> Restore
+                  </button>
+                ) : (
+                  <button className="button-ghost-danger" onClick={() => void setActive(open, false)}>
+                    <Archive size={15} /> Retire room
+                  </button>
+                )}
+                <span className="spacer" />
+                <button className="button-primary" onClick={() => setForm({ room: open })}>
+                  <Pencil size={15} /> Edit room
+                </button>
+              </>
+            )
           }
         >
-          <div className="form-row">
-            <Field label="Room number">
-              <input name="roomNumber" required maxLength={20} placeholder="e.g. 204" />
-            </Field>
-            <Field label="Room category">
-              <input name="roomType" required maxLength={80} placeholder="e.g. Executive Suite" />
-            </Field>
-          </div>
-          <div className="form-row">
-            <Field label="Nightly rate (₦)">
-              <input name="rate" type="number" min="0" step="1" required />
-            </Field>
-            <Field label="Guest capacity">
-              <input name="capacity" type="number" min="1" max="12" defaultValue="2" required />
-            </Field>
-          </div>
-        </Modal>
+          <DetailList
+            title="Room"
+            rows={[
+              ["Room number", open.room_number],
+              ["Category", open.room_type],
+              ["Sleeps", String(open.capacity)],
+              ["Nightly rate", open.nightly_rate_kobo !== null ? money(open.nightly_rate_kobo) : null],
+              ["Apartment unit", open.apartment_id ? "Yes. Edit its details, price and photos from Apartments." : null],
+            ]}
+          />
+          <DetailList
+            title="Current stay"
+            rows={[
+              ["Guest", open.stay?.guest ?? (open.stay ? "In house" : "No one tonight")],
+              ["Reference", open.stay?.reference],
+              ["Check-out", open.stay ? dateLabel(open.stay.checkOut) : null],
+            ]}
+          />
+          {open.next_statuses.length > 0 && open.active !== false && (
+            <section className="detail-section">
+              <h3>Change status</h3>
+              <div className="chip-list">
+                {open.next_statuses.map((status) => (
+                  <button key={status} className="button-secondary" onClick={() => void change(open, status)}>
+                    {optionLabel(reference.roomStatuses, status)}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <RoomHistory key={`${open.id}:${refreshKey}`} room={open} reference={reference} />
+        </Drawer>
       )}
+      {form && (
+        <RoomForm
+          room={form.room}
+          notify={notify}
+          onClose={() => setForm(null)}
+          onSaved={() => {
+            setForm(null);
+            void rooms.reload();
+          }}
+        />
+      )}
+      {dialog}
     </section>
   );
 }

@@ -48,7 +48,7 @@ export default function PhotoLightbox({
           className={`transition duration-700 ease-out group-hover:scale-[1.06] group-hover:brightness-105 group-active:scale-[1.02] motion-reduce:transform-none ${imageClassName}`}
         />
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#172d27]/45 via-transparent to-transparent opacity-40 transition-opacity duration-500 group-hover:opacity-100 group-focus-visible:opacity-100" />
-        <span aria-hidden="true" className="pointer-events-none absolute right-4 top-4 inline-flex translate-y-1 items-center gap-2 rounded-full border border-white/25 bg-[#172d27]/65 px-3 py-2 text-[11px] font-medium text-white opacity-0 shadow-lg backdrop-blur-md transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+        <span aria-hidden="true" className="pointer-events-none absolute right-4 top-4 inline-flex translate-y-1 items-center gap-2 rounded-full border border-white/25 bg-[#172d27]/65 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-lg backdrop-blur-md transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
           <Expand size={13} /> View photo
         </span>
         {children}
@@ -74,7 +74,7 @@ export default function PhotoLightbox({
             <X size={19} />
           </button>
           <Image src={src} alt={alt} fill sizes="94vw" className="object-contain" />
-          <p className="absolute inset-x-0 -bottom-8 truncate text-center text-xs text-white/70 sm:-bottom-7">
+          <p className="absolute inset-x-0 -bottom-8 truncate text-center text-[13px] text-white/70 sm:-bottom-7">
             {alt}
           </p>
         </div>

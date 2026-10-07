@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Archive, Check, Clock3, Pencil, Plus, X } from "lucide-react";
+import { Archive, Check, Clock3, Pencil, Plus, RotateCcw, X } from "lucide-react";
 import { api, errorMessage, type InventoryItem, type MenuItem, type PaymentMethod, type Receipt } from "@/lib/api";
 import { dateTimeLabel, money, optionLabel, text, timeLabel, toKobo } from "../format";
-import { Empty, Field, InlineError, Modal, useAction, useResource, type SectionProps } from "../ui";
+import { Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type SectionProps } from "../ui";
 
 type Dialog = { kind: "shift-open" } | { kind: "shift-close" } | { kind: "menu-new" } | { kind: "menu-edit"; item: MenuItem };
 
@@ -51,7 +51,7 @@ function RecipeEditor({ stock, lines, onChange }: { stock: InventoryItem[]; line
         <div className="form-row recipe-row" key={index}>
           <Field label="Inventory item">
             <select value={line.itemId} onChange={(event) => onChange(lines.map((entry, i) => (i === index ? { ...entry, itemId: event.target.value } : entry)))}>
-              <option value="">No stock deduction</option>
+              <option value="">Choose a stock item</option>
               {stock.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name} · {item.unit}
@@ -69,10 +69,23 @@ function RecipeEditor({ stock, lines, onChange }: { stock: InventoryItem[]; line
           )}
         </div>
       ))}
-      <p className="modal-help">Each ingredient is deducted from stock whenever this item is sold.</p>
+      <p className="modal-help">
+        {lines.some((line) => line.itemId)
+          ? "These quantities are deducted from stock every time this item is sold."
+          : "Not linked to stock: selling this item won't change inventory. For a drink or packaged item, pick its stock item with quantity 1."}
+      </p>
     </div>
   );
 }
+
+/** How many of this item the stock on hand allows; null when it isn't linked to stock. */
+function portionsLeft(item: MenuItem): number | null {
+  if (item.recipe.length === 0 || item.recipe.some((line) => line.onHand === undefined)) return null;
+  return Math.max(0, Math.min(...item.recipe.map((line) => Math.floor((line.onHand ?? 0) / line.quantity))));
+}
+
+const recipeLines = (item: MenuItem | null) =>
+  item?.recipe.length ? item.recipe.map((line) => ({ itemId: line.itemId, quantity: String(line.quantity) })) : [{ itemId: "", quantity: "1" }];
 
 function recipeFrom(lines: { itemId: string; quantity: string }[]) {
   const merged = new Map<string, number>();
@@ -82,7 +95,7 @@ function recipeFrom(lines: { itemId: string; quantity: string }[]) {
 
 export function PosSection({ notify, refreshKey, can, reference }: SectionProps) {
   const overview = useResource(() => api.pos.overview(), String(refreshKey));
-  const menu = useResource(() => api.menu.list(), String(refreshKey));
+  const menu = useResource(() => api.menu.list({ includeArchived: can("menu:write") }), String(refreshKey));
   const stock = useResource(() => (can("inventory:read") ? api.inventory.list() : Promise.resolve([])), String(refreshKey));
   const [cart, setCart] = useState<Record<string, number>>({});
   const [method, setMethod] = useState<PaymentMethod>("cash");
@@ -91,12 +104,16 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [recipe, setRecipe] = useState([{ itemId: "", quantity: "1" }]);
+  const [showArchived, setShowArchived] = useState(false);
   const checkoutKey = useRef<string | null>(null);
   const action = useAction();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const shift = overview.data?.shift ?? null;
   const orders = overview.data?.orders ?? [];
-  const items = menu.data ?? [];
+  const allItems = menu.data ?? [];
+  const items = allItems.filter((item) => item.active !== false);
+  const archivedItems = allItems.filter((item) => item.active === false);
   const lines = Object.entries(cart).filter(([, quantity]) => quantity > 0);
   const total = items.reduce((sum, item) => sum + BigInt(item.price_kobo) * BigInt(cart[item.id] ?? 0), 0n);
   const reloadAll = async () => {
@@ -139,15 +156,29 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
     }
   };
 
-  const archive = async (item: MenuItem) => {
-    if (!window.confirm(`Archive ${item.name}? It disappears from the till; past receipts are unchanged.`)) return;
+  const setActive = async (item: MenuItem, active: boolean) => {
+    const accepted = await confirm(
+      active
+        ? { title: `Restore ${item.name}?`, message: "It returns to the till at its current price.", confirmLabel: "Restore item" }
+        : { title: `Archive ${item.name}?`, message: "It disappears from the till. Past receipts are unchanged and you can restore it later.", confirmLabel: "Archive item", danger: true },
+    );
+    if (accepted === null) return;
     try {
-      await api.menu.update(item.id, { active: false });
-      notify(`${item.name} archived`);
+      await api.menu.update(item.id, { active });
+      notify(`${item.name} ${active ? "restored" : "archived"}`);
       await menu.reload();
     } catch (error) {
-      notify(errorMessage(error, "Unable to archive item"));
+      notify(errorMessage(error, "Unable to update the item"));
     }
+  };
+
+  const addToCart = (item: MenuItem) => {
+    const left = portionsLeft(item);
+    if (left !== null && (cart[item.id] ?? 0) >= left) {
+      notify(`Only ${left} ${item.name} left in stock`);
+      return;
+    }
+    setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }));
   };
 
   const closeDialog = () => {
@@ -167,11 +198,16 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
             </div>
             <div className="heading-actions">
               <span className={`booking-count ${shift ? "shift-open" : ""}`}>{shift ? `Shift open since ${timeLabel(shift.opened_at)}` : "No active shift"}</span>
+              {can("menu:write") && archivedItems.length > 0 && (
+                <label className="table-filter">
+                  <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Archived ({archivedItems.length})
+                </label>
+              )}
               {can("menu:write") && (
                 <button
                   className="button-secondary"
                   onClick={() => {
-                    setRecipe([{ itemId: "", quantity: "1" }]);
+                    setRecipe(recipeLines(null));
                     setDialog({ kind: "menu-new" });
                   }}
                 >
@@ -191,28 +227,58 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
           )}
           {items.length ? (
             <div className="pos-menu-grid">
-              {items.map((item) => (
-                <div className="pos-menu-tile" key={item.id}>
-                  <button className="pos-menu-item" disabled={!shift || !can("pos:write")} onClick={() => setCart((current) => ({ ...current, [item.id]: (current[item.id] ?? 0) + 1 }))}>
-                    <span>{item.category}</span>
-                    <strong>{item.name}</strong>
-                    <b>{money(item.price_kobo)}</b>
-                  </button>
-                  {can("menu:write") && (
-                    <div className="pos-menu-tools">
-                      <button aria-label={`Edit ${item.name}`} onClick={() => setDialog({ kind: "menu-edit", item })}>
-                        <Pencil size={12} />
-                      </button>
-                      <button aria-label={`Archive ${item.name}`} onClick={() => void archive(item)}>
-                        <Archive size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+              {items.map((item) => {
+                const left = portionsLeft(item);
+                return (
+                  <div className="pos-menu-tile" key={item.id}>
+                    <button className="pos-menu-item" disabled={!shift || !can("pos:write") || left === 0} onClick={() => addToCart(item)}>
+                      <span>{item.category}</span>
+                      <strong>{item.name}</strong>
+                      <b>{money(item.price_kobo)}</b>
+                      <small className={`stock-hint ${left === null ? "none" : left === 0 ? "low" : left <= 5 ? "low" : "ok"}`}>
+                        {left === null ? "Not linked to stock" : left === 0 ? "Out of stock" : `${left} left in stock`}
+                      </small>
+                    </button>
+                    {can("menu:write") && (
+                      <div className="pos-menu-tools">
+                        <button
+                          aria-label={`Edit ${item.name}`}
+                          onClick={() => {
+                            setRecipe(recipeLines(item));
+                            setDialog({ kind: "menu-edit", item });
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button aria-label={`Archive ${item.name}`} onClick={() => void setActive(item, false)}>
+                          <Archive size={13} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             !menu.loading && <Empty text="The menu is empty. A manager can add items once stock is configured." />
+          )}
+          {showArchived && archivedItems.length > 0 && (
+            <div className="archived-menu">
+              <p className="form-section-title">Archived items</p>
+              {archivedItems.map((item) => (
+                <div className="pos-cart-line" key={item.id}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small>
+                      {item.category} · {money(item.price_kobo)}
+                    </small>
+                  </div>
+                  <button className="button-secondary" onClick={() => void setActive(item, true)}>
+                    <RotateCcw size={14} /> Restore
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </section>
 
@@ -326,6 +392,7 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
         </section>
       </div>
 
+      {confirmDialog}
       {receipt && <ReceiptModal receipt={receipt} methodLabel={optionLabel(reference.posPaymentMethods, receipt.payment_method)} onClose={() => setReceipt(null)} />}
 
       {dialog?.kind === "shift-open" && (
@@ -376,6 +443,7 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
           title="Add menu item"
           busy={action.busy}
           error={action.error}
+          wide
           onClose={closeDialog}
           onSubmit={(values) =>
             action.run(async () => {
@@ -405,12 +473,18 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
         <Modal
           title={`Edit ${dialog.item.name}`}
           description="Past receipts keep the name and price at the time of sale."
+          wide
           busy={action.busy}
           error={action.error}
           onClose={closeDialog}
           onSubmit={(values) =>
             action.run(async () => {
-              await api.menu.update(dialog.item.id, { name: text(values.get("name")), category: text(values.get("category")), priceKobo: toKobo(values.get("price")) });
+              await api.menu.update(dialog.item.id, {
+                name: text(values.get("name")),
+                category: text(values.get("category")),
+                priceKobo: toKobo(values.get("price")),
+                recipe: recipeFrom(recipe),
+              });
               notify(`${text(values.get("name"))} updated`);
               closeDialog();
               await menu.reload();
@@ -428,6 +502,7 @@ export function PosSection({ notify, refreshKey, can, reference }: SectionProps)
           <Field label="Price (₦)">
             <input name="price" type="number" min="0" step="1" required defaultValue={Number(dialog.item.price_kobo) / 100} />
           </Field>
+          <RecipeEditor stock={stock.data ?? []} lines={recipe} onChange={setRecipe} />
         </Modal>
       )}
     </>

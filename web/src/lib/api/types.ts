@@ -67,6 +67,8 @@ export type Room = {
   capacity: number;
   status: RoomStatus;
   active?: boolean;
+  /** Set when the room is an apartment's unit; such rooms are edited from Apartments. */
+  apartment_id?: string | null;
   stay?: { reference?: string; guest?: string; checkOut: string } | null;
   /** States the signed-in user may set next (from the API's transition rules). */
   next_statuses: RoomStatus[];
@@ -91,8 +93,13 @@ export type Reservation = {
   status: ReservationStatus;
   payment_status: ReservationPaymentStatus;
   source?: string;
-  /** What the signed-in user may do now, decided by the API. */
-  actions: { next_statuses: ReservationStatus[]; record_payment: boolean };
+  notes?: string | null;
+  created_at?: string;
+  /**
+   * What the signed-in user may do now, decided by the API. `edit`: everything,
+   * guest details and check-out (in-house), guest details only, or nothing.
+   */
+  actions: { next_statuses: ReservationStatus[]; record_payment: boolean; edit?: "full" | "stay_end" | "contact" | "none" };
 };
 
 export type PaymentSource = "accommodation" | "restaurant";
@@ -124,6 +131,7 @@ export type Staff = {
   job_title: string;
   phone?: string;
   emergency_contact?: string;
+  start_date?: string | null;
   employment_status: EmploymentStatus;
   full_name: string;
   email: string;
@@ -143,14 +151,19 @@ export type InventoryItem = {
   reorder_level: string;
   cost_kobo: string;
   low_stock: boolean;
+  active?: boolean;
 };
+
+export type StockMovement = { id: string; type: string; quantity_delta: string; reason: string | null; reference: string | null; recorded_by: string | null; created_at: string };
 
 export type MenuItem = {
   id: string;
   name: string;
   category: string;
   price_kobo: string;
-  recipe: { itemId: string; name: string; quantity: number }[];
+  active?: boolean;
+  /** Stock used per item sold, with what is on hand now. */
+  recipe: { itemId: string; name: string; quantity: number; unit?: string; onHand?: number }[];
 };
 
 export type ActivityEvent = { id: string; event_type: string; entity_id: string; payload: Record<string, unknown>; created_at: string };
@@ -191,7 +204,7 @@ export type Receipt = {
 export type LoginInput = { email: string; password: string };
 export type ChangePasswordInput = { currentPassword: string; newPassword: string };
 export type SetupInput = { propertyName: string; fullName: string; email: string; password: string; setupSecret?: string };
-export type NewReservationInput = { name: string; email?: string; phone?: string; roomId: string; checkIn: string; checkOut: string; guests: number };
+export type NewReservationInput = { name: string; email?: string; phone?: string; roomId: string; checkIn: string; checkOut: string; guests: number; notes?: string };
 export type RecordPaymentInput = { amountKobo: number; method: PaymentMethod; paymentReference?: string; idempotencyKey: string };
 export type NewRoomInput = { roomNumber: string; roomType: string; nightlyRateKobo: number; capacity: number };
 export type NewStaffInput = {
@@ -285,7 +298,7 @@ export type PaymentTotals = { count: number; settledKobo: string; pendingKobo: s
 export type PaymentRegister = { payments: PaymentRecord[]; totals: PaymentTotals };
 
 export type RoomHistoryEntry = { action: string; from: string | null; to: string | null; note: string | null; actor: string | null; at: string };
-export type MenuItemChanges = Partial<{ name: string; category: string; priceKobo: number; active: boolean }>;
+export type MenuItemChanges = Partial<{ name: string; category: string; priceKobo: number; active: boolean; recipe: { itemId: string; quantity: number }[] }>;
 
 // ---- Live updates ----
 
@@ -325,3 +338,115 @@ export type PublicApartment = {
 /** Taken nights; a check-out day is free for a new check-in. */
 export type BookedRange = { checkIn: string; checkOut: string };
 export type PublicApartmentDetail = { apartment: PublicApartment; bookedRanges: BookedRange[] };
+
+// ---- Workspace edits ----
+
+export type RoomChanges = Partial<{ roomNumber: string; roomType: string; nightlyRateKobo: number; capacity: number; active: boolean }>;
+export type InventoryItemChanges = Partial<{ name: string; sku: string | null; unit: string; reorderLevel: number; costKobo: number; active: boolean }>;
+export type StaffProfileChanges = Partial<{
+  fullName: string;
+  role: Role;
+  employeeNumber: string;
+  department: string;
+  jobTitle: string;
+  phone: string | null;
+  emergencyContact: string | null;
+  startDate: string | null;
+}>;
+export type ReservationChanges = Partial<{
+  name: string;
+  email: string | null;
+  phone: string | null;
+  notes: string | null;
+  guests: number;
+  roomId: string;
+  checkIn: string;
+  checkOut: string;
+}>;
+export type ReservationPayment = { id: string; amount_kobo: string; method: string; status: string; reference: string | null; recorded_by: string | null; created_at: string; settled_at: string | null };
+
+// ---- Apartments (management) ----
+
+export type ApartmentStatus = "draft" | "published" | "archived";
+export type ApartmentStay = { reference: string; guestName: string | null; checkIn: string; checkOut: string; status: string };
+export type ApartmentImage = { id: string; url: string; caption: string | null; position: number; isCover: boolean; contentType: string; byteSize: number };
+export type Apartment = {
+  id: string;
+  roomId: string;
+  slug: string;
+  name: string;
+  unitCode: string;
+  category: string;
+  summary: string | null;
+  description: string | null;
+  status: ApartmentStatus;
+  location: { addressLine: string | null; area: string | null; city: string; state: string; country: string; latitude: number | null; longitude: number | null; directions: string | null };
+  /** Null for roles that may not see prices. */
+  pricing: { nightlyRateKobo: string | null; cautionFeeKobo: string | null; currency: "NGN" };
+  capacity: { maxGuests: number; bedrooms: number; bathrooms: number; beds: number; sizeSqm: number | null };
+  stayRules: { minimumNights: number; checkInTime: string; checkOutTime: string };
+  amenities: string[];
+  features: string[];
+  facilities: string[];
+  houseRules: string[];
+  policies: { warranty: string | null; cancellation: string | null };
+  images: ApartmentImage[];
+  unitStatus: string;
+  currentStay: ApartmentStay | null;
+  nextArrival: ApartmentStay | null;
+  createdAt: string;
+  updatedAt: string;
+};
+/** Create and update share one shape; on update only sent fields change and null clears optional text. */
+export type ApartmentInput = {
+  name?: string;
+  unitCode?: string;
+  slug?: string;
+  category?: string;
+  summary?: string | null;
+  description?: string | null;
+  status?: ApartmentStatus;
+  location?: Partial<{ addressLine: string | null; area: string | null; city: string; state: string; country: string; directions: string | null }>;
+  nightlyRateKobo?: number;
+  cautionFeeKobo?: number;
+  maxGuests?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+  beds?: number;
+  sizeSqm?: number | null;
+  minimumNights?: number;
+  checkInTime?: string;
+  checkOutTime?: string;
+  amenities?: string[];
+  features?: string[];
+  facilities?: string[];
+  houseRules?: string[];
+  warrantyPolicy?: string | null;
+  cancellationPolicy?: string | null;
+};
+export type ApartmentBooking = {
+  id: string;
+  reference: string;
+  apartment: { id: string; name: string; unitCode: string; slug: string };
+  status: string;
+  source: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guests: number;
+  booker: { name: string; email: string | null; phone: string | null };
+  notes: string | null;
+  payment: {
+    status: string;
+    amountKobo: string;
+    paidKobo: string;
+    pendingKobo: string;
+    balanceKobo: string;
+    cautionFeeKobo: string;
+    payments: Array<{ id: string; amountKobo: string; method: string; status: string; reference: string | null; provider: string | null; recordedBy: string | null; confirmedBy: string | null; createdAt: string; settledAt: string | null }>;
+  };
+  holdExpiresAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+export type ApartmentBookings = { bookings: ApartmentBooking[]; totals: { count: number; amountKobo: string; paidKobo: string; balanceKobo: string } };

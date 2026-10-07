@@ -88,15 +88,15 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
     }
   };
 
-  const input = "min-w-0 w-full bg-transparent text-sm font-semibold text-[#202b28] outline-none";
-  const label = "mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[.16em] text-stone-500";
-  const field = "block rounded-2xl border border-[#e6dfd2] bg-white px-4 py-3 text-sm text-[#202b28] outline-none placeholder:text-stone-400 focus:border-[#b28247]";
+  const input = "min-w-0 w-full bg-transparent text-[15px] font-semibold text-[#202b28] outline-none";
+  const label = "mb-2 flex items-center gap-2 text-xs uppercase tracking-[.16em] text-stone-500";
+  const field = "block rounded-2xl border border-[#e6dfd2] bg-white px-4 py-3 text-[15px] text-[#202b28] outline-none placeholder:text-stone-400 focus:border-[#b28247]";
 
   return (
     <div id="book" className="scroll-mt-6 rounded-[28px] border border-[#e6dfd2] bg-white p-6 shadow-[0_18px_40px_rgb(38_59_52/8%)]">
       <p>
         <b className="font-serif text-3xl text-[#263b34]">{money(pricing.nightlyRateKobo)}</b>
-        <span className="text-sm text-stone-500"> / night</span>
+        <span className="text-[15px] text-stone-500"> / night</span>
       </p>
 
       <form onSubmit={(event) => void checkAvailability(event)} className="mt-6">
@@ -127,10 +127,10 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
           </label>
         </div>
 
-        {problem && <p className="mt-3 rounded-xl bg-[#fbf1ec] px-4 py-2.5 text-xs text-[#a35f53]">{problem}</p>}
+        {problem && <p className="mt-3 rounded-xl bg-[#fbf1ec] px-4 py-2.5 text-[13px] text-[#a35f53]">{problem}</p>}
 
         {valid && !problem && (
-          <dl className="mt-5 space-y-2 text-sm text-stone-600">
+          <dl className="mt-5 space-y-2 text-[15px] text-stone-600">
             <div className="flex justify-between">
               <dt>
                 {money(pricing.nightlyRateKobo)} × {plural(nights, "night")}
@@ -142,7 +142,7 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
               <dd>{money(total)}</dd>
             </div>
             {caution > 0n && (
-              <div className="flex justify-between text-xs text-stone-500">
+              <div className="flex justify-between text-[13px] text-stone-500">
                 <dt>Caution fee (separate from the total)</dt>
                 <dd>{money(caution)}</dd>
               </div>
@@ -151,49 +151,49 @@ export default function BookingPanel({ apartment, bookedRanges, initial }: { apa
         )}
 
         {!confirmed && (
-          <button type="submit" disabled={busy || !valid || Boolean(problem)} className="mt-5 flex w-full items-center justify-between rounded-full bg-[#263b34] px-6 py-4 text-sm font-semibold text-white hover:bg-[#1a2c26] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="submit" disabled={busy || !valid || Boolean(problem)} className="mt-5 flex w-full items-center justify-between rounded-full bg-[#263b34] px-6 py-4 text-[15px] font-semibold text-white hover:bg-[#1a2c26] disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? "Checking…" : "Check availability"} <ArrowUpRight size={16} />
           </button>
         )}
       </form>
 
       {confirmed && !confirmed.available && (
-        <p className="mt-5 flex gap-2 rounded-xl bg-[#fbf1ec] px-4 py-3 text-xs leading-5 text-[#a35f53]">
+        <p className="mt-5 flex gap-2 rounded-xl bg-[#fbf1ec] px-4 py-3 text-[13px] leading-5 text-[#a35f53]">
           <XCircle size={16} className="shrink-0" /> Not available for {stayDate(stay.checkIn)} – {stayDate(stay.checkOut)}. Try other dates.
         </p>
       )}
 
       {confirmed?.available && (
         <form onSubmit={(event) => void book(event)} className="mt-5 space-y-3">
-          <p className="flex items-center gap-2 rounded-xl bg-[#eef5f1] px-4 py-3 text-xs font-semibold text-[#31715d]">
+          <p className="flex items-center gap-2 rounded-xl bg-[#eef5f1] px-4 py-3 text-[13px] font-semibold text-[#31715d]">
             <CheckCircle2 size={16} /> Available · {stayDate(stay.checkIn)} – {stayDate(stay.checkOut)}
           </p>
           <input name="name" aria-label="Full name" placeholder="Full name" autoComplete="name" required maxLength={120} className={`${field} w-full`} />
           <input name="email" aria-label="Email" placeholder="Email (for your confirmation)" type="email" autoComplete="email" required maxLength={254} className={`${field} w-full`} />
           <input name="phone" aria-label="Phone" placeholder="Phone (optional)" type="tel" autoComplete="tel" maxLength={32} pattern="[\+0-9 \(\)\-]*" className={`${field} w-full`} />
           <textarea name="notes" aria-label="Notes" placeholder="Anything we should know? (optional)" rows={2} maxLength={2000} className={`${field} w-full resize-none`} />
-          <button type="submit" disabled={busy} className="flex w-full items-center justify-between rounded-full bg-[#dfb56f] px-6 py-4 text-sm font-semibold text-[#263b34] hover:bg-[#edc98e] disabled:opacity-60">
+          <button type="submit" disabled={busy} className="flex w-full items-center justify-between rounded-full bg-[#dfb56f] px-6 py-4 text-[15px] font-semibold text-[#263b34] hover:bg-[#edc98e] disabled:opacity-60">
             {busy ? "Opening secure checkout…" : `Book and pay ${money(total)}`} <ArrowRight size={16} />
           </button>
-          <p className="flex gap-2 text-[11px] leading-5 text-stone-500">
+          <p className="flex gap-2 text-xs leading-5 text-stone-500">
             <ShieldCheck size={15} className="shrink-0 text-[#31715d]" /> You&apos;ll pay securely on our payment partner&apos;s page. Your dates are held while you pay, and we email your confirmation.
           </p>
         </form>
       )}
 
-      {error && <p className="mt-4 rounded-xl bg-[#fbf1ec] px-4 py-2.5 text-xs text-[#a35f53]">{error}</p>}
+      {error && <p className="mt-4 rounded-xl bg-[#fbf1ec] px-4 py-2.5 text-[13px] text-[#a35f53]">{error}</p>}
 
       {upcoming.length > 0 && (
         <div className="mt-6 border-t border-[#efeadf] pt-5">
-          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#b28247]">Already booked</p>
+          <p className="text-xs font-bold uppercase tracking-[.2em] text-[#b28247]">Already booked</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {upcoming.map((range) => (
-              <span key={range.checkIn} className="rounded-full bg-[#f4f0e8] px-3 py-1.5 text-[11px] text-stone-600">
+              <span key={range.checkIn} className="rounded-full bg-[#f4f0e8] px-3 py-1.5 text-xs text-stone-600">
                 {stayDate(range.checkIn)} – {stayDate(range.checkOut)}
               </span>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-stone-400">Check-out days are free for a new arrival.</p>
+          <p className="mt-2 text-xs text-stone-400">Check-out days are free for a new arrival.</p>
         </div>
       )}
     </div>

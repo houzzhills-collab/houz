@@ -9,7 +9,7 @@ import { ROLE_LABELS, hasPermission } from "../../lib/permissions.js";
 import { requirePrincipal } from "../auth/principal.js";
 import type { Principal } from "../auth/session.service.js";
 import { queueEmail } from "../email/queue.js";
-import { CreateStaffSchema, ListStaffSchema, OWNER_MANAGED_ROLES, ResetPasswordSchema, UpdateStaffSchema } from "./staff.schemas.js";
+import { CreateStaffSchema, ListStaffSchema, OWNER_MANAGED_ROLES, ResetPasswordSchema, UpdateStaffProfileSchema, UpdateStaffSchema } from "./staff.schemas.js";
 import { optionalText } from "../../lib/text.js";
 
 /** 18 random bytes → 24 URL-safe characters (~144 bits). */
@@ -162,6 +162,64 @@ const staffRoutes: FastifyPluginAsyncTypebox = async (app) => {
       }
     });
     return { id: request.params.id, employmentStatus: status };
+  });
+
+  app.patch("/:id/profile", { schema: UpdateStaffProfileSchema, preHandler: app.authorize("staff:write") }, async (request) => {
+    const principal = requirePrincipal(request);
+    const body = request.body;
+    const trimmed = {
+      fullName: body.fullName?.trim(),
+      employeeNumber: body.employeeNumber?.trim(),
+      department: body.department?.trim(),
+      jobTitle: body.jobTitle?.trim(),
+    };
+    if (Object.values(trimmed).some((value) => value === "")) throw Errors.unprocessable("Name, employee number, department and job title cannot be blank", "VALIDATION_FAILED");
+    if (body.role && principal.role !== "owner" && OWNER_MANAGED_ROLES.has(body.role)) {
+      throw Errors.forbidden("Only the owner can assign management, finance, or audit roles");
+    }
+    return withTransaction(app.db, async (tx) => {
+      const target = await lockManageableStaff(tx, principal, request.params.id);
+      if (trimmed.employeeNumber) {
+        const taken = await tx.maybeOne(`SELECT 1 FROM staff_profiles WHERE property_id = $1 AND employee_number = $2 AND id <> $3`, [principal.propertyId, trimmed.employeeNumber, request.params.id]);
+        if (taken) throw Errors.conflict("Another staff member has this employee number", "EMPLOYEE_NUMBER_TAKEN");
+      }
+      const optional = (value: string | null | undefined) => (value === undefined ? undefined : optionalText(value ?? undefined));
+      const phone = optional(body.phone);
+      const emergencyContact = optional(body.emergencyContact);
+      await tx.exec(
+        `UPDATE staff_profiles SET employee_number = coalesce($2, employee_number), department = coalesce($3, department), job_title = coalesce($4, job_title),
+                phone = CASE WHEN $5 THEN $6 ELSE phone END, emergency_contact = CASE WHEN $7 THEN $8 ELSE emergency_contact END,
+                start_date = CASE WHEN $9 THEN $10::date ELSE start_date END
+          WHERE id = $1`,
+        [
+          request.params.id,
+          trimmed.employeeNumber ?? null,
+          trimmed.department ?? null,
+          trimmed.jobTitle ?? null,
+          phone !== undefined,
+          phone ?? null,
+          emergencyContact !== undefined,
+          emergencyContact ?? null,
+          body.startDate !== undefined,
+          body.startDate ?? null,
+        ],
+      );
+      const roleChanged = Boolean(body.role && target.user_id && body.role !== target.role);
+      if (target.user_id && (trimmed.fullName || roleChanged)) {
+        await tx.exec(`UPDATE users SET full_name = coalesce($2, full_name), role = coalesce($3, role) WHERE id = $1`, [target.user_id, trimmed.fullName ?? null, roleChanged ? body.role : null]);
+      }
+      const sessionsRevoked = roleChanged && target.user_id ? await app.sessions.revokeAllForUser(tx.runner.manager, target.user_id, "role_changed") : 0;
+      await recordEvent(tx, {
+        propertyId: principal.propertyId,
+        actorId: principal.userId,
+        action: "staff.profile_updated",
+        entityType: "staff",
+        entityId: request.params.id,
+        details: { ...trimmed, phone, emergencyContact, startDate: body.startDate, ...(roleChanged ? { role: { from: target.role, to: body.role } } : {}), sessionsRevoked },
+        outbox: { reference: trimmed.employeeNumber ?? target.employee_number },
+      });
+      return { id: request.params.id, sessionsRevoked };
+    });
   });
 
   app.post(

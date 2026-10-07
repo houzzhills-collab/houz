@@ -80,15 +80,23 @@ type ModalProps = {
   onSubmit?: (values: FormData) => unknown;
   onClose?: () => void;
   wide?: boolean;
+  /** Red submit button for destructive actions. */
+  danger?: boolean;
   children: ReactNode;
 };
 
 /** Form dialog. Without `onClose` it cannot be dismissed (e.g. the temporary-password gate). */
-export function Modal({ title, description, submitLabel = "Save changes", busy, error, onSubmit, onClose, wide, children }: ModalProps) {
+export function Modal({ title, description, submitLabel = "Save changes", busy, error, onSubmit, onClose, wide, danger, children }: ModalProps) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void onSubmit?.(new FormData(event.currentTarget));
   };
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
       <form className={`management-modal ${wide ? "modal-wide" : ""}`} onSubmit={submit} role="dialog" aria-modal="true" aria-label={title}>
@@ -112,7 +120,7 @@ export function Modal({ title, description, submitLabel = "Save changes", busy, 
             </button>
           )}
           {onSubmit && (
-            <button className="button-primary" disabled={busy}>
+            <button className={danger ? "button-danger" : "button-primary"} disabled={busy}>
               {busy ? "Saving…" : submitLabel}
             </button>
           )}
@@ -120,6 +128,112 @@ export function Modal({ title, description, submitLabel = "Save changes", busy, 
       </form>
     </div>
   );
+}
+
+/** Side panel for viewing a record and acting on it. Closes on Escape or a click outside. */
+export function Drawer({
+  title,
+  subtitle,
+  badge,
+  onClose,
+  actions,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: ReactNode;
+  onClose: () => void;
+  /** Footer buttons. */
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    // A dialog opened from the drawer handles its own Escape.
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && !document.querySelector(".modal-backdrop") && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <aside className="management-drawer" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="drawer-header">
+          <div>
+            <h2>{title}</h2>
+            {(subtitle || badge) && (
+              <p>
+                {badge}
+                {subtitle && <span>{subtitle}</span>}
+              </p>
+            )}
+          </div>
+          <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="drawer-body">{children}</div>
+        {actions && <footer className="drawer-footer">{actions}</footer>}
+      </aside>
+    </div>
+  );
+}
+
+/** A titled group of label/value rows inside a drawer. Empty values are skipped. */
+export function DetailList({ title, rows }: { title?: string; rows: ReadonlyArray<readonly [label: string, value: ReactNode]> }) {
+  const shown = rows.filter(([, value]) => value !== null && value !== undefined && value !== "");
+  if (shown.length === 0) return null;
+  return (
+    <section className="detail-section">
+      {title && <h3>{title}</h3>}
+      <dl className="detail-list">
+        {shown.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+export type ConfirmOptions = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  /** Destructive actions get a red button. */
+  danger?: boolean;
+  /** Ask for a reason (recorded in the audit log); the promise resolves to it. */
+  reason?: string;
+};
+
+/**
+ * In-app confirmation instead of window.confirm/prompt. `confirm` resolves to
+ * the reason (or "") when accepted, and null when cancelled; render `dialog`.
+ */
+export function useConfirm() {
+  const [pending, setPending] = useState<(ConfirmOptions & { resolve: (value: string | null) => void }) | null>(null);
+  const confirm = useCallback((options: ConfirmOptions) => new Promise<string | null>((resolve) => setPending({ ...options, resolve })), []);
+  const finish = (value: string | null) => {
+    pending?.resolve(value);
+    setPending(null);
+  };
+  const dialog = pending && (
+    <Modal
+      title={pending.title}
+      description={pending.message}
+      submitLabel={pending.confirmLabel}
+      danger={pending.danger}
+      onClose={() => finish(null)}
+      onSubmit={(values) => finish(pending.reason ? String(values.get("reason") ?? "").trim() : "")}
+    >
+      {pending.reason && (
+        <Field label={pending.reason}>
+          <textarea name="reason" required minLength={3} maxLength={500} rows={3} autoFocus />
+        </Field>
+      )}
+    </Modal>
+  );
+  return { confirm, dialog };
 }
 
 export type Resource<T> = { data: T | null; error: string; loading: boolean; reload: () => Promise<void> };
