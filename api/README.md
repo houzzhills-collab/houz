@@ -1,6 +1,6 @@
 # Houzz Hills API
 
-This is the backend service for Houzz Hills: authentication, bookings, payments, rooms, staff, attendance, restaurant POS, inventory, the payment register, live updates and transactional email. It implements the backend described in [`../docs/PRD.md`](../docs/PRD.md) §5–§10. The frontend in [`../web`](../web) uses it through `web/src/lib/api`.
+This is the backend service for Houzz Hills: authentication, bookings, payments, shortlet apartments, rooms, staff, attendance, restaurant POS, inventory, the payment register, live updates and transactional email. It implements the backend described in [`../docs/PRD.md`](../docs/PRD.md) §5–§10. The frontend in [`../web`](../web) uses it through `web/src/lib/api`.
 
 Stack: Fastify 5, TypeORM 1 (query runners, migrations), PostgreSQL 14+, Redis 6.2+, JWT access tokens with rotating refresh cookies, OpenAPI 3.1 and Prometheus metrics.
 
@@ -72,6 +72,8 @@ Everything is under `/api/v1` except the health probes, `/openapi.json`, `/docs`
 | `GET /public/availability` | Public, rate limited | Room types available for a stay |
 | `POST /public/reservations` | Public, `Idempotency-Key` | Hold a room and start hosted checkout |
 | `GET /public/payments/{reference}` | Public, rate limited | Payment status for the result page (no guest data) |
+| `GET /public/apartments`, `GET /…/{slug}` | Public, rate limited | Published apartments (optionally only those free for given dates); one apartment with its booked dates |
+| `GET /public/apartments/{id}/images/{imageId}` | Public, cached | Apartment photo |
 | `POST /webhooks/payments` | Provider signature | Paystack or Flutterwave payment events |
 | `POST /cron/expire-payment-holds` | Bearer `CRON_SECRET` | Release unpaid checkout holds |
 | `POST /cron/reconcile-payments` | Bearer `CRON_SECRET` | Settlement reconciliation and stale-transfer queue |
@@ -85,6 +87,9 @@ Everything is under `/api/v1` except the health probes, `/openapi.json`, `/docs`
 | `GET /management/payments`, `GET …/payments/export` | `payments:read` | Payment register with totals; CSV export |
 | `PATCH /management/payments/{id}` | `payments:confirm` | Confirm a pending bank transfer |
 | `GET, PATCH /management/payment-exceptions[/{id}]` | `payments:confirm` | Exception queue and resolution notes |
+| `GET, POST /management/apartments`, `GET, PATCH /…/{id}` | `rooms:read` / `rooms:create` | Apartment listings: create, edit, publish, archive |
+| `POST /management/apartments/{id}/images`, `PUT /…/images/order`, `PATCH, DELETE /…/images/{imageId}` | `rooms:create` | Upload (multipart), order, caption, cover and delete photos |
+| `GET /management/apartments/bookings`, `GET /…/{id}/calendar` | `reservations:read` | Booking tracker with booker and payment details; per-apartment calendar, occupancy and revenue |
 | `GET, POST /management/rooms`, `PATCH /…/{id}`, `GET /…/{id}/history` | `rooms:read` / `rooms:create` (add) / `rooms:write` (state) | Rooms, state changes, history |
 | `GET, POST /management/staff`, `PATCH /…/{id}`, `POST /…/{id}/temporary-password` | `staff:read` / `:write` | Onboarding, employment status, password reset |
 | `GET, POST /management/attendance`, `GET /…/self` | `attendance:read` / authenticated | Team state; your own clock in/out |
@@ -119,6 +124,7 @@ In production the API refuses to start in any of these cases:
 | Auth | `JWT_ACCESS_SECRET`, `JWT_*_TTL_*`, `COOKIE_DOMAIN`, `COOKIE_SECURE`, `COOKIE_SAME_SITE`, login limits |
 | Payments | `SETTINGS_ENCRYPTION_KEY` (encrypts provider keys stored in settings), `PUBLIC_WEB_URL`, provider base URLs and timeout |
 | Email | `RESEND_BASE_URL`, `EMAIL_TIMEOUT_MS` (the key and sender are owner settings; links in emails use `PUBLIC_WEB_URL`) |
+| File storage | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, optional `R2_PUBLIC_URL`, `R2_ENDPOINT`, `STORAGE_TIMEOUT_MS` (see [File storage](#file-storage-cloudflare-r2)) |
 | Booking | `PUBLIC_BOOKING_RATE_LIMIT_MAX` |
 | Operations | `CRON_SECRET`, `RECONCILIATION_WINDOW_HOURS`, `SETUP_SECRET`, `METRICS_TOKEN` |
 
@@ -200,6 +206,55 @@ Each environment (dev, staging, production) needs its own database, Redis and pr
    - choose the provider
    - save, then click **Check saved key**
 3. Copy the webhook URL shown in Settings (`${PUBLIC_WEB_URL}/api/v1/webhooks/payments`) into the provider dashboard. The web app forwards it to the API with the raw body intact, so signatures verify.
+
+## Shortlet apartments
+
+An apartment is a listing (name, category, description, location, photos, amenities, features, facilities, house rules, caution fee, warranty and cancellation policies, minimum stay, check-in and check-out times) backed by one bookable unit in `rooms`. The API keeps the unit in step with the listing:
+
+| Listing field | Unit (`rooms`) column | Why |
+| --- | --- | --- |
+| `unitCode` | `room_number` | Unique per property |
+| `name` | `room_type` | Bookings choose a unit by type, so each apartment books as itself. Names must not match any other unit's type. |
+| `nightlyRateKobo`, `maxGuests` | `nightly_rate_kobo`, `capacity` | Pricing and capacity checks |
+| `status` | `active` | Only published apartments can be booked |
+
+Because of this, everything that already works for rooms works for apartments: availability, the overlap constraint, online checkout, staff bookings and payments, check-in and check-out, housekeeping state, the payment register, emails and live updates. Book an apartment through the existing reservation endpoints: staff send its `roomId`, and the public site sends its `bookingRoomType` as `roomType`.
+
+**Lifecycle**
+1. `POST /management/apartments` creates a **draft**. Its unit exists but cannot be booked.
+2. Upload photos: `POST /…/{id}/images` as `multipart/form-data` with `file` parts (JPEG, PNG or WebP, checked by content; up to 8 MB each, 10 per request, 30 per apartment). Identical re-uploads are ignored, and the first photo becomes the cover.
+3. `PATCH … { "status": "published" }` opens it for booking and lists it publicly. Publishing needs at least one photo.
+4. `PATCH … { "status": "archived" }` retires it. This is refused while it has upcoming bookings. Nothing is ever hard-deleted, so booking history stays intact.
+
+**Rules**
+- **Minimum stay** is enforced for staff bookings, online bookings and public availability.
+- **Price and capacity changes** apply to new bookings only. Existing reservations keep their price.
+- **The caution fee** is listed and shown to guests and in the booking tracker. It is not added to the stay total or collected through checkout.
+- **Housekeeping** sees apartments without prices or guest names, as with rooms.
+- **Public endpoints** never show the exact address, coordinates or directions. Guests get those in their booking confirmation email.
+
+**Booking tracker.** `GET /management/apartments/bookings` lists apartment reservations, newest stay first. Each one has the booker's name, email and phone, dates, nights, guests, status, source, total, paid, pending and balance amounts, caution fee, and every payment (method, status, reference, who recorded and confirmed it). Filter by `apartmentId`, `from`/`to`, `status`, `paymentStatus` or a search (`q`) on name, email, phone or reference; `totals` cover all matches. `GET /management/apartments/{id}/calendar` gives the stays in a period (90 days by default) with occupancy and revenue.
+
+**Photos** are stored in Cloudflare R2 when it is configured, otherwise in PostgreSQL. See [File storage](#file-storage-cloudflare-r2).
+
+## File storage (Cloudflare R2)
+
+Uploads still go through the API, which checks each file's content, size and the per-apartment limit, then stores it in an R2 bucket under `apartments/<apartment id>/<photo id>.<ext>` with a year-long immutable `Cache-Control`. The database row keeps only the object key.
+
+- **Order of work:** bytes are uploaded before the database transaction, so no row lock is held across the network. If the transaction then fails, or the photo turns out to be a duplicate, the uploaded objects are deleted again.
+- **R2 down:** the upload fails with `502 STORAGE_UNAVAILABLE` and nothing is recorded. Credentials never appear in errors or logs.
+- **Deleting a photo:** the row is deleted first, then the object. If the object delete fails, it is logged as an orphan to remove by hand; the listing is already correct.
+- **Serving:**
+  - With `R2_PUBLIC_URL` (a custom domain on the bucket, or its r2.dev URL), photo URLs in API responses point straight at Cloudflare's CDN. The old `/api/v1/public/apartments/{id}/images/{imageId}` URL redirects there.
+  - Without it, the bucket stays private and the API streams photos from R2 at that same URL.
+- **Without R2** (local development and tests), photos are stored in `apartment_images.data`. Rows stored that way keep working after R2 is switched on, so no data migration is needed. New uploads go to R2.
+
+**Setup**
+1. Cloudflare dashboard → **R2** → create a bucket (for example `houzzhills-media`).
+2. Optional, for CDN delivery: bucket → **Settings** → **Custom Domains** → connect a domain such as `media.houzzhills.com` (or enable the r2.dev URL for testing). Use that as `R2_PUBLIC_URL`.
+3. **R2** → **Manage API tokens** → create a token with **Object Read & Write** on that bucket only. Note the access key id and secret.
+4. Set `R2_ACCOUNT_ID` (shown on the R2 overview page), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and optionally `R2_PUBLIC_URL`, then restart. Set all four required variables or none; a partial set stops the API at boot. EU-jurisdiction buckets also need `R2_ENDPOINT=https://<account id>.eu.r2.cloudflarestorage.com`.
+5. The boot log says `uploads stored in Cloudflare R2` once it is active.
 
 ## How email works
 
@@ -293,6 +348,8 @@ Templates live in `src/modules/email/templates.ts` and share one branded layout 
 | `CreateApiSessions` | Refresh-token sessions |
 | `BookingIntegrityAndPaymentExceptions` | Exclusion constraint, online-checkout columns, POS lifecycle, the exception queue, and indexes for every list path |
 | `CreateEmailMessages` | The email outbox and delivery log, and the email settings (off by default) |
+| `CreateApartments` | Apartment listings and photos, linked one-to-one to their bookable unit |
+| `ApartmentImagesObjectStorage` | Photos can hold an R2 object key instead of bytes. Reverting is refused while any photo exists only in R2. |
 
 - Before applying `BookingIntegrityAndPaymentExceptions` to an existing database, resolve any genuinely overlapping active reservations; otherwise the migration stops with a constraint error.
 - Migrations run as a release step, never on boot. `synchronize` is permanently off.

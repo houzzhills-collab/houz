@@ -1,0 +1,93 @@
+/* Public website. Scoped to .site so the management workspace keeps its own look. */
+html:has(.site) { scroll-behavior: smooth; }
+
+.site {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+@layer base {
+  .site ::selection { background: #f4dba8; color: #573514; }
+
+  .site :is(button, a, input, select, textarea) { outline: none; }
+  .site :is(button, a, input, select, textarea):focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, #c8861a 28%, transparent);
+  }
+
+  .site *, .site *::before, .site *::after {
+    transition-property: background-color, border-color, color;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+
+  .site :is(button, a, [role="button"]) {
+    transition-property: background-color, border-color, color, opacity, transform, box-shadow;
+  }
+}
+
+/* Restrained, editorial motion. */
+.site-hero > img {
+  animation: houzzhills-hero-drift 18s ease-in-out infinite alternate;
+  transform: scale(1.04);
+  transform-origin: center;
+}
+
+.site-hero a[href="#apartments"] {
+  transition: transform 220ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+
+.site-hero a[href="#apartments"]:hover,
+.site-cta:hover {
+  box-shadow: 0 12px 30px rgb(38 59 52 / 18%);
+  transform: translateY(-2px);
+}
+
+.apartment-card-media {
+  background-size: 100%;
+  transition: background-size 700ms cubic-bezier(.2,.7,.2,1), box-shadow 500ms ease;
+}
+
+.apartment-card:hover .apartment-card-media {
+  background-size: 110%;
+  box-shadow: 0 18px 40px rgb(38 59 52 / 16%);
+}
+
+.apartment-card-arrow,
+.site a[href="#apartments"] svg,
+.site a[href="#availability"] svg {
+  transition: transform 300ms ease;
+}
+
+.apartment-card:hover .apartment-card-arrow,
+.site a[href="#apartments"]:hover svg,
+.site a[href="#availability"]:hover svg {
+  transform: translate(2px, -2px);
+}
+
+@keyframes houzzhills-hero-drift {
+  from { transform: scale(1.04) translate3d(0, 0, 0); }
+  to { transform: scale(1.09) translate3d(-1.2%, -0.8%, 0); }
+}
+
+@keyframes houzzhills-section-reveal {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@supports (animation-timeline: view()) {
+  .site-reveal {
+    animation: houzzhills-section-reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 24%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.site) { scroll-behavior: auto; }
+  .site *, .site *::before, .site *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

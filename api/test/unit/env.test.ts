@@ -70,3 +70,28 @@ describe("loadConfig", () => {
     expect(config.isProduction).toBe(true);
   });
 });
+
+describe("R2 storage configuration", () => {
+  const r2 = { R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef", R2_ACCESS_KEY_ID: "0123456789abcdef01", R2_SECRET_ACCESS_KEY: "s".repeat(40), R2_BUCKET: "houzzhills-media" };
+
+  it("is off unless configured, so photos stay in PostgreSQL", () => {
+    expect(loadConfig(base).storage.r2).toBeNull();
+  });
+
+  it("derives the endpoint from the account id and normalises the public URL", () => {
+    const config = loadConfig({ ...base, ...r2, R2_PUBLIC_URL: "https://media.houzzhills.com/" });
+    expect(config.storage.r2).toMatchObject({
+      endpoint: "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
+      bucket: "houzzhills-media",
+      publicUrl: "https://media.houzzhills.com",
+    });
+  });
+
+  it("rejects a partial or unsafe configuration", () => {
+    expect(issuesOf({ ...base, R2_BUCKET: "houzzhills-media" }).join()).toContain("R2 needs");
+    expect(issuesOf({ ...base, ...r2, R2_BUCKET: "Bad_Bucket" }).join()).toContain("R2_BUCKET");
+    const production = { ...base, ...r2, NODE_ENV: "production", CORS_ORIGINS: "https://app.example.com", R2_PUBLIC_URL: "http://media.example.com" };
+    expect(issuesOf(production).join()).toContain("R2_PUBLIC_URL must use https in production");
+  });
+});
+

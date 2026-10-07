@@ -5,6 +5,7 @@ import { sha256Hex } from "../../lib/crypto.js";
 import { addDays, businessToday, nightsBetween } from "../../lib/dates.js";
 import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
+import { notifyBookingReceived } from "../email/notifications.js";
 import type { GlobalSettings } from "../settings/settings.registry.js";
 import { expireLapsedHolds, refreshReservationPayment } from "../payments/ledger.js";
 
@@ -15,6 +16,18 @@ export const OCCUPYING_STAY_SQL = `
 
 /** Rooms that can be sold: active and not taken out of service. */
 export const SELLABLE_ROOM_SQL = `ro.active AND ro.status NOT IN ('maintenance', 'out_of_order')`;
+
+/** Units whose apartment (if any) accepts a stay of `nightsParam` nights. */
+export const MEETS_MINIMUM_STAY_SQL = (nightsParam: string) =>
+  `NOT EXISTS (SELECT 1 FROM apartments ap WHERE ap.room_id = ro.id AND ap.minimum_nights > ${nightsParam}::int)`;
+
+/** Rejects a stay shorter than the apartment's minimum, with a message the guest can act on. */
+export async function assertMinimumStay(sql: Sql, roomId: string, nights: number): Promise<void> {
+  const apartment = await sql.maybeOne<{ name: string; minimum_nights: number }>(`SELECT name, minimum_nights FROM apartments WHERE room_id = $1`, [roomId]);
+  if (apartment && nights < apartment.minimum_nights) {
+    throw Errors.unprocessable(`${apartment.name} needs a stay of at least ${apartment.minimum_nights} nights`, "MINIMUM_STAY");
+  }
+}
 
 export type StayDates = { checkIn: string; checkOut: string; nights: number };
 
@@ -106,16 +119,24 @@ export async function createPublicBooking(app: FastifyInstance, input: PublicBoo
 
     const room = await tx.maybeOne<{ id: string; nightly_rate_kobo: string }>(
       `SELECT ro.id, ro.nightly_rate_kobo::text FROM rooms ro
-        WHERE ro.property_id = $1 AND ro.room_type = $2 AND ro.capacity >= $3 AND ${SELLABLE_ROOM_SQL}
+        WHERE ro.property_id = $1 AND ro.room_type = $2 AND ro.capacity >= $3 AND ${SELLABLE_ROOM_SQL} AND ${MEETS_MINIMUM_STAY_SQL("$6")}
           AND NOT EXISTS (SELECT 1 FROM reservations r
                            WHERE r.room_id = ro.id AND ${OCCUPYING_STAY_SQL}
                              AND r.check_in < $5::date AND r.check_out > $4::date)
         ORDER BY ro.room_number
         LIMIT 1
         FOR UPDATE OF ro SKIP LOCKED`,
-      [propertyId, input.roomType, input.guests, stay.checkIn, stay.checkOut],
+      [propertyId, input.roomType, input.guests, stay.checkIn, stay.checkOut, stay.nights],
     );
-    if (!room) throw Errors.conflict("That room type is unavailable for the selected dates", "ROOM_UNAVAILABLE");
+    if (!room) {
+      // A clearer reason when the only obstacle is the apartment's minimum stay.
+      const apartment = await tx.maybeOne<{ room_id: string }>(
+        `SELECT ap.room_id FROM apartments ap JOIN rooms ro ON ro.id = ap.room_id WHERE ro.property_id = $1 AND ro.room_type = $2`,
+        [propertyId, input.roomType],
+      );
+      if (apartment) await assertMinimumStay(tx, apartment.room_id, stay.nights);
+      throw Errors.conflict("That room type is unavailable for the selected dates", "ROOM_UNAVAILABLE");
+    }
     // Lapsed holds on this room still count for the exclusion constraint until expired.
     await expireLapsedHolds(tx, { roomId: room.id, limit: 100 });
 
@@ -180,7 +201,10 @@ export async function createPublicBooking(app: FastifyInstance, input: PublicBoo
     await releaseFailedCheckout(app, booking.id, booking.propertyId, booking.reference);
     throw error;
   }
-  await withTransaction(app.db, (tx) => tx.exec(`UPDATE payments SET checkout_url = $2 WHERE reservation_id = $1 AND method = 'online'`, [booking.id, checkoutUrl]));
+  await withTransaction(app.db, async (tx) => {
+    await tx.exec(`UPDATE payments SET checkout_url = $2 WHERE reservation_id = $1 AND method = 'online'`, [booking.id, checkoutUrl]);
+    await notifyBookingReceived(tx, booking.id, { expiresAt: booking.holdExpiresAt, checkoutUrl });
+  });
   return {
     reservation: { id: booking.id, reference: booking.reference, amountKobo: booking.amountKobo, currency: "NGN", status: "pending_payment", holdExpiresAt: booking.holdExpiresAt.toISOString() },
     checkoutUrl,

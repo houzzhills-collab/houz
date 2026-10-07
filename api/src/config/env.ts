@@ -80,6 +80,17 @@ const EnvSchema = Type.Object({
   RESEND_BASE_URL: Type.String({ default: "https://api.resend.com", minLength: 1 }),
   EMAIL_TIMEOUT_MS: Int(10_000, 1000, 60_000),
 
+  /** Cloudflare R2 for uploaded files (apartment photos). Without it, photos are kept in PostgreSQL. */
+  R2_ACCOUNT_ID: Type.Optional(Type.String({ pattern: "^[0-9a-f]{32}$" })),
+  /** Overrides the endpoint derived from R2_ACCOUNT_ID (EU jurisdiction buckets, or a local S3-compatible server for testing). */
+  R2_ENDPOINT: Type.Optional(Type.String({ minLength: 1 })),
+  R2_ACCESS_KEY_ID: Type.Optional(Type.String({ minLength: 16, maxLength: 128 })),
+  R2_SECRET_ACCESS_KEY: Type.Optional(Type.String({ minLength: 32, maxLength: 128 })),
+  R2_BUCKET: Type.Optional(Type.String({ pattern: "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$" })),
+  /** Public base URL of the bucket (custom domain or r2.dev). When set, photo URLs point straight at Cloudflare's CDN. */
+  R2_PUBLIC_URL: Type.Optional(Type.String({ minLength: 1 })),
+  STORAGE_TIMEOUT_MS: Int(20_000, 1000, 120_000),
+
   /** Bearer secret for the scheduler-only job endpoints (/jobs/*). Jobs are disabled when unset. */
   CRON_SECRET: Type.Optional(Type.String({ minLength: 32 })),
   RECONCILIATION_WINDOW_HOURS: Int(48, 1, 720),
@@ -135,6 +146,11 @@ export type AppConfig = Readonly<{
   }>;
   /** The Resend key, sender and notification switches live in owner-managed settings. */
   email: Readonly<{ resendBaseUrl: string; timeoutMs: number }>;
+  /** Object storage for uploads; `r2` is null when files are kept in PostgreSQL instead. */
+  storage: Readonly<{
+    r2: Readonly<{ endpoint: string; bucket: string; accessKeyId: string; secretAccessKey: string; publicUrl: string | null }> | null;
+    timeoutMs: number;
+  }>;
   settingsEncryptionKey: Buffer;
   jobs: Readonly<{ cronSecret: string | null; reconciliationWindowHours: number }>;
   setupSecret: string | null;
@@ -173,6 +189,20 @@ function parseOrigins(raw: string, issues: string[]): string[] {
   return origins;
 }
 
+/** R2 is all-or-nothing: credentials, a bucket, and an account id or endpoint. */
+function parseR2(env: Env, isProduction: boolean, issues: string[]): AppConfig["storage"]["r2"] {
+  const credentials = [env.R2_ACCESS_KEY_ID, env.R2_SECRET_ACCESS_KEY, env.R2_BUCKET];
+  const any = credentials.some(Boolean) || Boolean(env.R2_ACCOUNT_ID ?? env.R2_ENDPOINT ?? env.R2_PUBLIC_URL);
+  if (!any) return null;
+  if (!env.R2_ACCESS_KEY_ID || !env.R2_SECRET_ACCESS_KEY || !env.R2_BUCKET || !(env.R2_ACCOUNT_ID ?? env.R2_ENDPOINT)) {
+    issues.push("R2 needs R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET and R2_ACCOUNT_ID (or R2_ENDPOINT); leave all unset to keep photos in PostgreSQL");
+    return null;
+  }
+  const endpoint = parseBaseUrl("R2_ENDPOINT", env.R2_ENDPOINT ?? `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`, isProduction, issues);
+  const publicUrl = env.R2_PUBLIC_URL ? parseBaseUrl("R2_PUBLIC_URL", env.R2_PUBLIC_URL, isProduction, issues) : null;
+  return Object.freeze({ endpoint, bucket: env.R2_BUCKET, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, publicUrl });
+}
+
 /**
  * Validates and normalises environment variables. Empty strings are treated as
  * unset so that blank lines in `.env` files fall back to defaults.
@@ -201,11 +231,12 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   const paystackBaseUrl = parseBaseUrl("PAYSTACK_BASE_URL", env.PAYSTACK_BASE_URL, isProduction, issues);
   const flutterwaveBaseUrl = parseBaseUrl("FLUTTERWAVE_BASE_URL", env.FLUTTERWAVE_BASE_URL, isProduction, issues);
   const resendBaseUrl = parseBaseUrl("RESEND_BASE_URL", env.RESEND_BASE_URL, isProduction, issues);
+  const r2 = parseR2(env, isProduction, issues);
   const settingsEncryptionKey = Buffer.from(env.SETTINGS_ENCRYPTION_KEY, "base64");
   if (settingsEncryptionKey.length !== 32) issues.push("SETTINGS_ENCRYPTION_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)");
 
   if (isProduction) {
-    for (const name of ["JWT_ACCESS_SECRET", "CRON_SECRET", "SETUP_SECRET", "METRICS_TOKEN"] as const) {
+    for (const name of ["JWT_ACCESS_SECRET", "CRON_SECRET", "SETUP_SECRET", "METRICS_TOKEN", "R2_SECRET_ACCESS_KEY"] as const) {
       const value = env[name];
       if (value && PLACEHOLDER.test(value)) issues.push(`${name} still contains a placeholder value`);
     }
@@ -257,6 +288,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     }),
     payments: Object.freeze({ publicWebUrl, timeoutMs: env.PROVIDER_TIMEOUT_MS, paystackBaseUrl, flutterwaveBaseUrl }),
     email: Object.freeze({ resendBaseUrl, timeoutMs: env.EMAIL_TIMEOUT_MS }),
+    storage: Object.freeze({ r2, timeoutMs: env.STORAGE_TIMEOUT_MS }),
     settingsEncryptionKey,
     jobs: Object.freeze({ cronSecret: env.CRON_SECRET ?? null, reconciliationWindowHours: env.RECONCILIATION_WINDOW_HOURS }),
     setupSecret: env.SETUP_SECRET ?? null,

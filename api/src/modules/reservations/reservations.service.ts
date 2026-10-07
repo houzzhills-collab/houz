@@ -8,7 +8,7 @@ import { decodeCursor, toPage } from "../../lib/pagination.js";
 import type { Principal } from "../auth/session.service.js";
 import { alertTransferPending, notifyGuestPayment, notifyGuestStay } from "../email/notifications.js";
 import { confirmHeldStayIfPaid, expireLapsedHolds, refreshReservationPayment } from "../payments/ledger.js";
-import { OCCUPYING_STAY_SQL, insertGuest, staffReference, validateStay } from "../public/booking.service.js";
+import { OCCUPYING_STAY_SQL, assertMinimumStay, insertGuest, staffReference, validateStay } from "../public/booking.service.js";
 
 export type ReservationRow = {
   id: string;
@@ -120,6 +120,7 @@ export async function createStaffReservation(
     if (!room) throw Errors.notFound("Room not found");
     if (room.status === "maintenance" || room.status === "out_of_order") throw Errors.conflict("The room is out of service", "ROOM_OUT_OF_SERVICE");
     if (room.capacity < input.guests) throw Errors.conflict("The selected room cannot accommodate that many guests", "ROOM_CAPACITY");
+    await assertMinimumStay(tx, room.id, stay.nights);
     await expireLapsedHolds(tx, { roomId: room.id, limit: 100 });
     const clash = await tx.maybeOne(
       `SELECT 1 FROM reservations r WHERE r.room_id = $1 AND ${OCCUPYING_STAY_SQL} AND r.check_in < $3::date AND r.check_out > $2::date LIMIT 1`,

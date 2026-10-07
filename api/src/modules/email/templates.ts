@@ -24,11 +24,20 @@ export type StaySummary = {
   amountKobo: string;
   paidKobo: string;
   paymentStatus: string;
+  /** Present for apartment stays. Optional so messages queued before apartments existed still render. */
+  apartment?: ApartmentStay | null;
 };
+
+/** What a guest needs to arrive: the exact address is shared only after booking. */
+export type ApartmentStay = { address: string | null; directions: string | null; checkInTime: string; checkOutTime: string; cautionFeeKobo: string };
+
+/** How staff can reach a website guest about an unfinished booking. */
+export type GuestContact = { email: string | null; phone: string | null };
 
 export type PaymentSummary = { amountKobo: string; method: string; reference: string | null; at: string };
 
 export type TemplateData = {
+  "guest.booking_received": { stay: StaySummary; holdExpiresAt: string; checkoutUrl: string };
   "guest.booking_confirmed": { stay: StaySummary };
   "guest.checked_in": { stay: StaySummary };
   "guest.checked_out": { stay: StaySummary };
@@ -45,6 +54,8 @@ export type TemplateData = {
   "alert.payment_exception": { kind: string; reference: string | null; provider: string | null; expectedKobo: string | null; receivedKobo: string | null; at: string };
   "alert.transfer_pending": { source: "accommodation" | "restaurant"; reference: string; amountKobo: string; senderReference: string | null; recordedBy: string; guestName: string | null };
   "alert.new_booking": { stay: StaySummary };
+  "alert.booking_request": { stay: StaySummary; contact: GuestContact; holdExpiresAt: string };
+  "alert.booking_expired": { stay: StaySummary; contact: GuestContact };
   "alert.low_stock": { items: Array<{ name: string; unit: string; quantity: string; reorderLevel: string }>; cause: string };
   "alert.cash_variance": { cashier: string; openingFloatKobo: string; expectedKobo: string; countedKobo: string; varianceKobo: string; closedAt: string };
   "alert.room_out_of_service": { roomNumber: string; status: string; note: string | null; changedBy: string };
@@ -73,6 +84,7 @@ export type DailySummary = {
 export type TemplateName = keyof TemplateData;
 
 export const TEMPLATE_AUDIENCE: Readonly<Record<TemplateName, Audience>> = {
+  "guest.booking_received": "guest",
   "guest.booking_confirmed": "guest",
   "guest.checked_in": "guest",
   "guest.checked_out": "guest",
@@ -89,6 +101,8 @@ export const TEMPLATE_AUDIENCE: Readonly<Record<TemplateName, Audience>> = {
   "alert.payment_exception": "management",
   "alert.transfer_pending": "management",
   "alert.new_booking": "management",
+  "alert.booking_request": "management",
+  "alert.booking_expired": "management",
   "alert.low_stock": "management",
   "alert.cash_variance": "management",
   "alert.room_out_of_service": "management",
@@ -151,7 +165,8 @@ function firstName(name: string | null): string {
 }
 
 function roomLabel(stay: StaySummary): string {
-  return stay.roomNumber ? `${stay.roomType} · Room ${stay.roomNumber}` : stay.roomType;
+  if (!stay.roomNumber) return stay.roomType;
+  return stay.apartment ? `${stay.roomType} · Unit ${stay.roomNumber}` : `${stay.roomType} · Room ${stay.roomNumber}`;
 }
 
 function stayRows(stay: StaySummary, options: { money?: boolean } = {}): Array<readonly [string, string]> {
@@ -159,9 +174,10 @@ function stayRows(stay: StaySummary, options: { money?: boolean } = {}): Array<r
   const rows: Array<readonly [string, string]> = [
     ["Booking reference", stay.reference],
     ["Guest", stay.guestName],
-    ["Room", roomLabel(stay)],
-    ["Check-in", day(stay.checkIn)],
-    ["Check-out", day(stay.checkOut)],
+    [stay.apartment ? "Apartment" : "Room", roomLabel(stay)],
+    ...(stay.apartment?.address ? [["Address", stay.apartment.address] as const] : []),
+    ["Check-in", stay.apartment ? `${day(stay.checkIn)} · from ${stay.apartment.checkInTime}` : day(stay.checkIn)],
+    ["Check-out", stay.apartment ? `${day(stay.checkOut)} · by ${stay.apartment.checkOutTime}` : day(stay.checkOut)],
     ["Stay", `${plural(nights, "night")} · ${plural(stay.guests, "guest")}`],
   ];
   if (options.money !== false) {
@@ -170,6 +186,30 @@ function stayRows(stay: StaySummary, options: { money?: boolean } = {}): Array<r
     if (balance > 0n) rows.push(["Balance due", naira(balance)]);
   }
   return rows;
+}
+
+/** Directions and the caution fee, for the emails a guest uses to arrive. */
+function arrivalBlocks(stay: StaySummary): Block[] {
+  const apartment = stay.apartment;
+  if (!apartment) return [];
+  const blocks: Block[] = [];
+  if (apartment.directions) blocks.push({ kind: "callout", tone: "neutral", title: "Getting there", text: apartment.directions });
+  if (BigInt(apartment.cautionFeeKobo) > 0n) {
+    blocks.push({
+      kind: "callout",
+      tone: "neutral",
+      title: "Caution fee",
+      text: `This apartment has a caution fee of ${naira(apartment.cautionFeeKobo)}, separate from the stay total above. Reply to this email if you'd like to know how it's collected and returned.`,
+    });
+  }
+  return blocks;
+}
+
+function contactRows(contact: GuestContact): Array<readonly [string, string]> {
+  return [
+    ["Guest email", contact.email ?? "Not given"],
+    ["Guest phone", contact.phone ?? "Not given"],
+  ];
 }
 
 function stayDetails(stay: StaySummary, title = "Your booking"): Block {
@@ -193,6 +233,25 @@ const ALERT_REASON = (ctx: TemplateContext) =>
 type Templates = { [K in TemplateName]: (data: TemplateData[K], ctx: TemplateContext) => EmailContent };
 
 const TEMPLATES: Templates = {
+  "guest.booking_received": ({ stay, holdExpiresAt, checkoutUrl }, ctx) => ({
+    subject: `Booking received · complete your payment · ${stay.reference}`,
+    preheader: `We're holding your ${stay.roomType} until ${moment(holdExpiresAt)}.`,
+    eyebrow: "Booking received",
+    tone: "neutral",
+    heading: `Thanks, ${firstName(stay.guestName)}. Your ${stay.roomType} is on hold`,
+    blocks: [
+      {
+        kind: "paragraph",
+        text: `We've received your booking at ${ctx.brand.propertyName} and are holding your dates. Complete your payment by ${moment(holdExpiresAt)} to confirm it; after that the dates are released.`,
+      },
+      stayDetails(stay),
+      { kind: "button", label: "Complete payment", url: checkoutUrl },
+      { kind: "paragraph", text: "We'll email your confirmation as soon as the payment arrives. If you've already paid, there's nothing more to do." },
+      ...statusButton(stay, ctx),
+    ],
+    reason: GUEST_REASON(ctx),
+  }),
+
   "guest.booking_confirmed": ({ stay }, ctx) => {
     const paid = stay.paymentStatus === "paid";
     return {
@@ -206,7 +265,8 @@ const TEMPLATES: Templates = {
         stayDetails(stay),
         paid
           ? { kind: "callout", tone: "success", title: "Fully paid", text: "Your payment has been received. Nothing more is due for the room." }
-          : { kind: "callout", tone: "warning", title: "Balance due", text: `${naira(BigInt(stay.amountKobo) - BigInt(stay.paidKobo))} is payable at the front desk on arrival.` },
+          : { kind: "callout", tone: "warning", title: "Balance due", text: `${naira(BigInt(stay.amountKobo) - BigInt(stay.paidKobo))} is payable on arrival.` },
+        ...arrivalBlocks(stay),
         { kind: "paragraph", text: "If your plans change or you have any special requests, simply reply to this email and our front desk will help." },
         ...statusButton(stay, ctx),
       ],
@@ -490,6 +550,37 @@ const TEMPLATES: Templates = {
     blocks: [
       { kind: "paragraph", text: `A guest has booked and paid through the website. The room is confirmed and assigned.` },
       { kind: "details", rows: [...stayRows(stay), ["Payment", PAYMENT_STATUS_LABELS[stay.paymentStatus as keyof typeof PAYMENT_STATUS_LABELS] ?? stay.paymentStatus]] },
+      ...workspaceButton(ctx, "View reservations"),
+    ],
+    reason: ALERT_REASON(ctx),
+  }),
+
+  "alert.booking_request": ({ stay, contact, holdExpiresAt }, ctx) => ({
+    subject: `Booking request · ${roomLabel(stay)} · ${day(stay.checkIn)}`,
+    preheader: `${stay.guestName} started a website booking and is paying online.`,
+    eyebrow: "New booking request",
+    tone: "neutral",
+    heading: `${stay.guestName} is booking online`,
+    blocks: [
+      {
+        kind: "paragraph",
+        text: `A guest has started a booking on the website. The dates are held until ${moment(holdExpiresAt)}. You'll get another email when the payment is confirmed, or if the hold expires unpaid.`,
+      },
+      { kind: "details", rows: [...stayRows(stay), ...contactRows(contact)] },
+      ...workspaceButton(ctx, "View reservations"),
+    ],
+    reason: ALERT_REASON(ctx),
+  }),
+
+  "alert.booking_expired": ({ stay, contact }, ctx) => ({
+    subject: `Booking not paid · ${roomLabel(stay)} · ${stay.reference}`,
+    preheader: `${stay.guestName}'s hold expired without payment.`,
+    eyebrow: "Hold expired",
+    tone: "warning",
+    heading: `${stay.guestName}'s booking wasn't completed`,
+    blocks: [
+      { kind: "paragraph", text: "The guest didn't finish paying in time, so the dates were released and can be booked again. You may want to follow up with them." },
+      { kind: "details", rows: [...stayRows(stay, { money: false }), ...contactRows(contact)] },
       ...workspaceButton(ctx, "View reservations"),
     ],
     reason: ALERT_REASON(ctx),

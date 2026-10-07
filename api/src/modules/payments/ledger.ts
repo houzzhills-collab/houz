@@ -1,7 +1,7 @@
 import type { Sql } from "../../db/sql.js";
 import { Errors } from "../../lib/errors.js";
 import { recordEvent } from "../../lib/events.js";
-import { notifyGuestLatePayment, notifyGuestPayment, notifyGuestStay, notifyStayConfirmed } from "../email/notifications.js";
+import { notifyGuestLatePayment, notifyGuestPayment, notifyHoldExpired, notifyStayConfirmed } from "../email/notifications.js";
 import { queueAlert } from "../email/queue.js";
 import type { VerifiedTransaction } from "./providers/index.js";
 
@@ -165,7 +165,7 @@ export async function expireLapsedHolds(tx: Sql, options: { roomId?: string; lim
       entityId: reservation.id,
       outbox: { reference: reservation.reference },
     });
-    await notifyGuestStay(tx, reservation.id, "guest.hold_expired");
+    await notifyHoldExpired(tx, reservation.id);
   }
   return expired.length;
 }

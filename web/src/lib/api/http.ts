@@ -13,6 +13,8 @@ import type {
   PosOrder,
   Property,
   PublicBooking,
+  PublicApartment,
+  PublicApartmentDetail,
   PublicPaymentStatus,
   Receipt,
   Reference,
@@ -356,6 +358,24 @@ export function createHttpClient(baseUrl: string): ApiClient {
       },
       reserve: (input, idempotencyKey) => request<PublicBooking>("POST", "/public/reservations", { body: input, idempotencyKey, authenticated: false }),
       paymentStatus: (reference) => request<PublicPaymentStatus>("GET", `/public/payments/${encodeURIComponent(reference)}`, { authenticated: false }),
+      async apartments({ checkIn, checkOut, guests } = {}) {
+        const apartments: PublicApartment[] = [];
+        let cursor: string | null = null;
+        for (let page = 0; page < MAX_PAGES; page += 1) {
+          const query = new URLSearchParams({
+            limit: String(PAGE_SIZE),
+            ...(checkIn && checkOut ? { checkIn, checkOut } : {}),
+            ...(guests ? { guests: String(guests) } : {}),
+            ...(cursor ? { cursor } : {}),
+          });
+          const result: { apartments: PublicApartment[]; nextCursor: string | null } = await request("GET", `/public/apartments?${query.toString()}`, { authenticated: false });
+          apartments.push(...result.apartments);
+          cursor = result.nextCursor;
+          if (!cursor) break;
+        }
+        return apartments;
+      },
+      apartment: (slug) => request<PublicApartmentDetail>("GET", `/public/apartments/${encodeURIComponent(slug)}`, { authenticated: false }),
     },
   };
 }

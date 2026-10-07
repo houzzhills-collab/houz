@@ -300,3 +300,28 @@ export type PublicBooking = {
   checkoutUrl: string;
 };
 export type PublicPaymentStatus = { reference: string; paymentStatus: string; reservationStatus: string; amountKobo: string };
+
+/** A published apartment as guests see it (`/public/apartments`). The exact address is shared after booking. */
+export type PublicApartment = {
+  id: string;
+  slug: string;
+  name: string;
+  /** Send as `roomType` when booking this apartment. */
+  bookingRoomType: string;
+  category: string;
+  summary: string | null;
+  description: string | null;
+  location: { area: string | null; city: string; state: string; country: string };
+  pricing: { nightlyRateKobo: string; cautionFeeKobo: string; currency: "NGN" };
+  capacity: { maxGuests: number; bedrooms: number; bathrooms: number; beds: number; sizeSqm: number | null };
+  stayRules: { minimumNights: number; checkInTime: string; checkOutTime: string };
+  amenities: string[];
+  features: string[];
+  facilities: string[];
+  houseRules: string[];
+  policies: { warranty: string | null; cancellation: string | null };
+  images: Array<{ id: string; url: string; caption: string | null; isCover: boolean }>;
+};
+/** Taken nights; a check-out day is free for a new check-in. */
+export type BookedRange = { checkIn: string; checkOut: string };
+export type PublicApartmentDetail = { apartment: PublicApartment; bookedRanges: BookedRange[] };

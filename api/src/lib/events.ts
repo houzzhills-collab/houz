@@ -48,6 +48,7 @@ const EVENT_VISIBILITY: ReadonlyArray<readonly [prefix: string, permissions: rea
   ["payment.", ["payments:read", "reservations:read"]],
   ["reservation.", ["reservations:read"]],
   ["room.", ["rooms:read"]],
+  ["apartment.", ["rooms:read"]],
   ["housekeeping.", ["rooms:read"]],
   ["pos.", ["pos:read"]],
   ["menu.", ["pos:read"]],

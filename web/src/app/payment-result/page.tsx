@@ -73,7 +73,7 @@ function PaymentResult() {
                 : "The payment was not completed in time, so the room was released. You have not been charged."}{" "}
               Reference: {status.reference}
             </p>
-            <Link className="button-primary auth-submit" href="/reserve">
+            <Link className="button-primary auth-submit" href="/">
               Start a new booking
             </Link>
           </>

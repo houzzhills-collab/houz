@@ -52,6 +52,12 @@ export default defineRailway(() => {
       SETTINGS_ENCRYPTION_KEY: preserve(),
       SETUP_SECRET: preserve(),
       METRICS_TOKEN: preserve(),
+      // Cloudflare R2 for apartment photos (see api/README "File storage"). Unset keeps photos in PostgreSQL.
+      R2_ACCOUNT_ID: preserve(),
+      R2_ACCESS_KEY_ID: preserve(),
+      R2_SECRET_ACCESS_KEY: preserve(),
+      R2_BUCKET: preserve(),
+      R2_PUBLIC_URL: preserve(),
     },
   });
 

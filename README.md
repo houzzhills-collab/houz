@@ -109,6 +109,17 @@ railway variables --service api \
   --set "METRICS_TOKEN=$(openssl rand -hex 24)"
 ```
 
+Then connect Cloudflare R2 for apartment photos (optional; without it photos are stored in PostgreSQL):
+
+```bash
+railway variables --service api \
+  --set "R2_ACCOUNT_ID=<32-character account id>" \
+  --set "R2_ACCESS_KEY_ID=<token access key id>" \
+  --set "R2_SECRET_ACCESS_KEY=<token secret>" \
+  --set "R2_BUCKET=houzzhills-media" \
+  --set "R2_PUBLIC_URL=https://media.houzzhills.com"
+```
+
 - Keep `SETTINGS_ENCRYPTION_KEY` stable and backed up. If it changes, saved payment keys become unreadable and must be re-entered.
 - Redeploy `api` and `web` after setting the variables. The web image bakes `API_INTERNAL_URL` in at build time.
 

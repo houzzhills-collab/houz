@@ -12,6 +12,8 @@ import type {
   PaymentRegister,
   PublicBooking,
   PublicBookingInput,
+  PublicApartment,
+  PublicApartmentDetail,
   PublicPaymentStatus,
   RoomHistoryEntry,
   EmailLog,
@@ -139,6 +141,9 @@ export interface ApiClient {
     availability(query: { checkIn: string; checkOut: string; guests: number }): Promise<AvailableRoomType[]>;
     reserve(input: PublicBookingInput, idempotencyKey: string): Promise<PublicBooking>;
     paymentStatus(reference: string): Promise<PublicPaymentStatus>;
+    /** Published apartments; with dates, only those free for the whole stay. */
+    apartments(query?: { checkIn?: string; checkOut?: string; guests?: number }): Promise<PublicApartment[]>;
+    apartment(slug: string): Promise<PublicApartmentDetail>;
   };
 }
 

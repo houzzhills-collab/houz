@@ -5,7 +5,7 @@ import { addDays, businessToday, nightsBetween } from "../../lib/dates.js";
 import { Errors } from "../../lib/errors.js";
 import { errorResponses } from "../../lib/schemas.js";
 import { Type } from "typebox";
-import { OCCUPYING_STAY_SQL, SELLABLE_ROOM_SQL, createPublicBooking } from "./booking.service.js";
+import { MEETS_MINIMUM_STAY_SQL, OCCUPYING_STAY_SQL, SELLABLE_ROOM_SQL, createPublicBooking } from "./booking.service.js";
 import { AvailabilitySchema, CreatePublicReservationSchema, PaymentStatusSchema } from "./public.schemas.js";
 import { optionalText } from "../../lib/text.js";
 
@@ -24,13 +24,13 @@ const publicRoutes: FastifyPluginAsyncTypebox = async (app) => {
         `SELECT ro.room_type, min(ro.nightly_rate_kobo)::text AS nightly_rate_kobo, max(ro.capacity)::int AS capacity, count(*)::int AS available_count
            FROM rooms ro
           WHERE ro.property_id = (SELECT id FROM properties ORDER BY created_at, id LIMIT 1)
-            AND ro.capacity >= $3 AND ${SELLABLE_ROOM_SQL}
+            AND ro.capacity >= $3 AND ${SELLABLE_ROOM_SQL} AND ${MEETS_MINIMUM_STAY_SQL("$4")}
             AND NOT EXISTS (SELECT 1 FROM reservations r
                              WHERE r.room_id = ro.id AND ${OCCUPYING_STAY_SQL}
                                AND r.check_in < $2::date AND r.check_out > $1::date)
           GROUP BY ro.room_type
           ORDER BY ro.room_type`,
-        [checkIn, checkOut, guests],
+        [checkIn, checkOut, guests, nights],
       ),
     );
     return { roomTypes };

@@ -243,7 +243,7 @@ export class EmailService {
       brand: { propertyName, webUrl: web },
       recipientName,
       managementUrl: web ? `${web}/management` : null,
-      bookingUrl: web ? `${web}/reserve` : null,
+      bookingUrl: web ? `${web}/` : null,
       statusUrl: (reference) => (web ? `${web}/payment-result?reference=${encodeURIComponent(reference)}` : null),
     };
   }

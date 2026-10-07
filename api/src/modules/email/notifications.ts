@@ -1,6 +1,6 @@
 import type { Sql } from "../../db/sql.js";
 import { queueAlert, queueEmail } from "./queue.js";
-import type { PaymentSummary, StaySummary, TemplateName } from "./templates.js";
+import type { GuestContact, PaymentSummary, StaySummary, TemplateName } from "./templates.js";
 
 /**
  * Domain-level notifications, called by services inside their transactions
@@ -15,6 +15,7 @@ type StayRow = {
   source: string;
   guest_name: string;
   email: string | null;
+  phone: string | null;
   room_type: string;
   room_number: string | null;
   check_in: string;
@@ -23,17 +24,24 @@ type StayRow = {
   amount_kobo: string;
   paid_kobo: string;
   payment_status: string;
+  apartment_address: string | null;
+  apartment_directions: string | null;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  caution_fee_kobo: string | null;
 };
 
-async function loadStay(tx: Sql, reservationId: string): Promise<{ propertyId: string; email: string | null; source: string; stay: StaySummary } | null> {
+async function loadStay(tx: Sql, reservationId: string): Promise<{ propertyId: string; email: string | null; contact: GuestContact; source: string; stay: StaySummary } | null> {
   const row = await tx.maybeOne<StayRow>(
-    `SELECT r.property_id, r.reference, r.source, g.full_name AS guest_name, g.email, coalesce(ro.room_type, r.room_type) AS room_type,
+    `SELECT r.property_id, r.reference, r.source, g.full_name AS guest_name, g.email, g.phone, coalesce(ro.room_type, r.room_type) AS room_type,
             ro.room_number, r.check_in::text, r.check_out::text, r.guests_count, r.amount_kobo::text,
             coalesce((SELECT sum(p.amount_kobo) FROM payments p WHERE p.reservation_id = r.id AND p.status = 'settled'), 0)::text AS paid_kobo,
-            r.payment_status
+            r.payment_status, nullif(concat_ws(', ', ap.address_line, ap.area, ap.city, ap.state), '') AS apartment_address,
+            ap.directions AS apartment_directions, ap.check_in_time, ap.check_out_time, ap.caution_fee_kobo::text
        FROM reservations r
        JOIN guests g ON g.id = r.guest_id
        LEFT JOIN rooms ro ON ro.id = r.room_id
+       LEFT JOIN apartments ap ON ap.room_id = r.room_id
       WHERE r.id = $1`,
     [reservationId],
   );
@@ -41,6 +49,7 @@ async function loadStay(tx: Sql, reservationId: string): Promise<{ propertyId: s
   return {
     propertyId: row.property_id,
     email: row.email,
+    contact: { email: row.email, phone: row.phone },
     source: row.source,
     stay: {
       reference: row.reference,
@@ -54,6 +63,16 @@ async function loadStay(tx: Sql, reservationId: string): Promise<{ propertyId: s
       amountKobo: row.amount_kobo,
       paidKobo: row.paid_kobo,
       paymentStatus: row.payment_status,
+      apartment:
+        row.check_in_time && row.check_out_time
+          ? {
+              address: row.apartment_address,
+              directions: row.apartment_directions,
+              checkInTime: row.check_in_time,
+              checkOutTime: row.check_out_time,
+              cautionFeeKobo: row.caution_fee_kobo ?? "0",
+            }
+          : null,
     },
   };
 }
@@ -95,6 +114,43 @@ export async function notifyStayConfirmed(tx: Sql, reservationId: string): Promi
       dedupeKey: `alert.new_booking:${reservationId}`,
     });
   }
+}
+
+/** A website guest started checkout: tell them how to finish paying, and tell reservations staff a booking is on the way. */
+export async function notifyBookingReceived(tx: Sql, reservationId: string, hold: { expiresAt: Date; checkoutUrl: string }): Promise<void> {
+  const loaded = await loadStay(tx, reservationId);
+  if (!loaded) return;
+  const holdExpiresAt = hold.expiresAt.toISOString();
+  if (loaded.email) {
+    await queueEmail(tx, {
+      propertyId: loaded.propertyId,
+      template: "guest.booking_received",
+      to: { email: loaded.email, name: loaded.stay.guestName },
+      data: { stay: loaded.stay, holdExpiresAt, checkoutUrl: hold.checkoutUrl },
+      dedupeKey: `guest.booking_received:${reservationId}`,
+    });
+  }
+  await queueAlert(tx, {
+    propertyId: loaded.propertyId,
+    template: "alert.booking_request",
+    data: { stay: loaded.stay, contact: loaded.contact, holdExpiresAt },
+    roles: ["owner", "manager", "front_desk"],
+    dedupeKey: `alert.booking_request:${reservationId}`,
+  });
+}
+
+/** A checkout hold lapsed unpaid: tell the guest the dates were released, and tell staff about an unfinished website booking. */
+export async function notifyHoldExpired(tx: Sql, reservationId: string): Promise<void> {
+  await notifyGuestStay(tx, reservationId, "guest.hold_expired");
+  const loaded = await loadStay(tx, reservationId);
+  if (loaded?.source !== "public_website") return;
+  await queueAlert(tx, {
+    propertyId: loaded.propertyId,
+    template: "alert.booking_expired",
+    data: { stay: loaded.stay, contact: loaded.contact },
+    roles: ["owner", "manager", "front_desk"],
+    dedupeKey: `alert.booking_expired:${reservationId}`,
+  });
 }
 
 /** Receipt for a settled payment, or a "being verified" note for a pending bank transfer. */

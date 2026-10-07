@@ -135,3 +135,22 @@ export async function signedIn(app: App, propertyId: string, role: Role, options
 export function lagosDate(days = 0): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Date.now() + days * 86_400_000));
 }
+
+/** A real 1×1 PNG; appending bytes makes distinct photos that still decode. */
+export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+export const photo = (tag: string) => Buffer.concat([PNG, Buffer.from(tag)]);
+
+export function multipart(files: Array<{ data: Buffer; filename?: string; field?: string }>, fields: Record<string, string> = {}) {
+  const boundary = `----hh${randomUUID()}`;
+  const parts: Buffer[] = [];
+  for (const [name, value] of Object.entries(fields)) parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+  for (const file of files) {
+    parts.push(
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.field ?? "file"}"; filename="${file.filename ?? "photo.png"}"\r\nContent-Type: image/png\r\n\r\n`),
+      file.data,
+      Buffer.from("\r\n"),
+    );
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  return { payload: Buffer.concat(parts), headers: { "content-type": `multipart/form-data; boundary=${boundary}` } };
+}

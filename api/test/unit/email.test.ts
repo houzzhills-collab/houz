@@ -29,6 +29,7 @@ const payment = { amountKobo: "5000000", method: "pos", reference: "POS-77", at:
 
 /** Sample data for every template, so adding a template without a sample fails the type check. */
 const SAMPLES: { [K in TemplateName]: TemplateData[K] } = {
+  "guest.booking_received": { stay, holdExpiresAt: "2026-10-05T12:30:00.000Z", checkoutUrl: "https://checkout.paystack.test/abc" },
   "guest.booking_confirmed": { stay },
   "guest.checked_in": { stay },
   "guest.checked_out": { stay: { ...stay, paidKobo: stay.amountKobo, paymentStatus: "paid" } },
@@ -45,6 +46,8 @@ const SAMPLES: { [K in TemplateName]: TemplateData[K] } = {
   "alert.payment_exception": { kind: "amount_mismatch", reference: "HH-ABC-123", provider: "paystack", expectedKobo: "15000000", receivedKobo: "1500000", at: "2026-10-06T08:00:00.000Z" },
   "alert.transfer_pending": { source: "restaurant", reference: "R-20261006-AB12", amountKobo: "850000", senderReference: null, recordedBy: "Ada Obi", guestName: null },
   "alert.new_booking": { stay: { ...stay, paidKobo: stay.amountKobo, paymentStatus: "paid" } },
+  "alert.booking_request": { stay, contact: { email: "chidi@example.test", phone: "+234 800 000 0000" }, holdExpiresAt: "2026-10-05T12:30:00.000Z" },
+  "alert.booking_expired": { stay, contact: { email: "chidi@example.test", phone: null } },
   "alert.low_stock": { items: [{ name: "Rice", unit: "kg", quantity: "0", reorderLevel: "5" }, { name: "Oil", unit: "l", quantity: "2", reorderLevel: "3" }], cause: "restaurant sale R-1" },
   "alert.cash_variance": { cashier: "Ada Obi", openingFloatKobo: "1000000", expectedKobo: "4500000", countedKobo: "4400000", varianceKobo: "-100000", closedAt: "2026-10-06T20:00:00.000Z" },
   "alert.room_out_of_service": { roomNumber: "204", status: "out_of_order", note: "Leaking AC", changedBy: "Ada Obi" },

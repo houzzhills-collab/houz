@@ -2,6 +2,7 @@ import type { preHandlerAsyncHookHandler } from "fastify";
 import type { Redis } from "ioredis";
 import type { DataSource } from "typeorm";
 import type { AppConfig } from "../config/env.js";
+import type { R2Storage } from "../lib/object-storage.js";
 import type { Permission } from "../lib/permissions.js";
 import type { Principal, SessionService } from "../modules/auth/session.service.js";
 import type { EmailService } from "../modules/email/email.service.js";
@@ -24,6 +25,8 @@ declare module "fastify" {
     };
     /** Transactional email dispatcher (Resend). Emails are queued with `queueEmail` inside transactions. */
     email: EmailService;
+    /** Cloudflare R2 for uploaded files, or null when uploads are kept in PostgreSQL. */
+    storage: R2Storage | null;
     metrics: AppMetrics;
     /** Verifies the bearer access token and loads `request.principal`. */
     authenticate: preHandlerAsyncHookHandler;

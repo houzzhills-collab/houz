@@ -168,7 +168,7 @@ export default function ReservePage() {
             <div className="form-row">
               <label className="form-field">
                 <span>Phone</span>
-                <input name="phone" type="tel" autoComplete="tel" maxLength={32} pattern="[+0-9 ()\-]*" />
+                <input name="phone" type="tel" autoComplete="tel" maxLength={32} pattern="[\+0-9 \(\)\-]*" />
               </label>
               <label className="form-field">
                 <span>Notes (optional)</span>

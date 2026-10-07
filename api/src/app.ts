@@ -3,6 +3,8 @@ import sensible from "@fastify/sensible";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import type { AppConfig } from "./config/env.js";
+import apartmentRoutes from "./modules/apartments/apartments.routes.js";
+import publicApartmentRoutes from "./modules/apartments/public-apartments.routes.js";
 import attendanceRoutes from "./modules/attendance/attendance.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
@@ -30,6 +32,7 @@ import metricsPlugin from "./plugins/metrics.js";
 import paymentsPlugin from "./plugins/payments.js";
 import redisPlugin from "./plugins/redis.js";
 import securityPlugin from "./plugins/security.js";
+import storagePlugin from "./plugins/storage.js";
 import swaggerPlugin from "./plugins/swagger.js";
 
 const REQUEST_ID = /^[A-Za-z0-9_\-:.]{8,128}$/;
@@ -109,6 +112,7 @@ export function buildApp(config: AppConfig) {
   void app.register(idempotencyPlugin);
   void app.register(paymentsPlugin);
   void app.register(emailPlugin);
+  void app.register(storagePlugin);
   void app.register(metricsPlugin);
 
   void app.register(healthRoutes, { prefix: "/health" });
@@ -117,6 +121,7 @@ export function buildApp(config: AppConfig) {
       await api.register(authRoutes, { prefix: "/auth" });
       await api.register(setupRoutes, { prefix: "/setup" });
       await api.register(publicRoutes, { prefix: "/public" });
+      await api.register(publicApartmentRoutes, { prefix: "/public/apartments" });
       await api.register(webhookRoutes, { prefix: "/webhooks" });
       await api.register(jobRoutes, { prefix: "/cron" });
       await api.register(
@@ -127,6 +132,7 @@ export function buildApp(config: AppConfig) {
           await management.register(paymentRoutes, { prefix: "/payments" });
           await management.register(paymentExceptionRoutes, { prefix: "/payment-exceptions" });
           await management.register(roomRoutes, { prefix: "/rooms" });
+          await management.register(apartmentRoutes, { prefix: "/apartments" });
           await management.register(staffRoutes, { prefix: "/staff" });
           await management.register(attendanceRoutes, { prefix: "/attendance" });
           await management.register(inventoryRoutes, { prefix: "/inventory" });

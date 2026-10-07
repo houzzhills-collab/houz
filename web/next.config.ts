@@ -15,7 +15,8 @@ const contentSecurityPolicy = [
   // Next.js inlines its bootstrap scripts; nonces would make every page dynamic.
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  // Apartment photos may come straight from the storage CDN (R2_PUBLIC_URL on the API).
+  "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ""}`,
   "frame-ancestors 'none'",
