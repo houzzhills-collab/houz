@@ -7,7 +7,7 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual, type ScryptOpti
  */
 const KEY_LENGTH = 64;
 const SCRYPT_OPTIONS: ScryptOptions = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-export const PASSWORD_MIN_LENGTH = 12;
+export const PASSWORD_MIN_LENGTH = 6;
 export const PASSWORD_MAX_LENGTH = 256;
 
 function scrypt(password: string, salt: string, keyLength: number): Promise<Buffer> {

@@ -101,8 +101,8 @@ function PasswordDialog({ required, onClose, onChanged }: { required: boolean; o
       <Field label="Current password" tip="The password you signed in with, to confirm it's you.">
         <input name="currentPassword" type="password" autoComplete="current-password" required />
       </Field>
-      <Field label="New password (12+ characters)" tip="At least 12 characters. A short phrase of unrelated words is strong and easy to remember. Saving signs you out on your other devices.">
-        <input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={256} required />
+      <Field label="New password (6+ characters)" tip="At least 6 characters. A short phrase of unrelated words is strong and easy to remember. Saving signs you out on your other devices.">
+        <input name="newPassword" type="password" autoComplete="new-password" minLength={6} maxLength={256} required />
       </Field>
     </Modal>
   );

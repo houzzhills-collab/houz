@@ -242,10 +242,10 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
               <input name="startDate" type="date" />
             </Field>
             <Field
-              label="Temporary password (optional, 12+ characters)"
+              label="Temporary password (optional, 6+ characters)"
               tip="A one-time password to give them for their first sign-in. Leave it empty and a strong one is generated and shown once. They must choose their own password when they first sign in."
             >
-              <input name="temporaryPassword" type="password" minLength={12} maxLength={256} autoComplete="new-password" />
+              <input name="temporaryPassword" type="password" minLength={6} maxLength={256} autoComplete="new-password" />
             </Field>
           </div>
         </Modal>

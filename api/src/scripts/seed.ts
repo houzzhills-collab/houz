@@ -5,7 +5,7 @@
  *   npm run db:seed -- --reset-passwords  # also give existing seed accounts a new password
  *
  * Refuses to run with NODE_ENV=production. Passwords are random per account
- * unless SEED_PASSWORD is set (12+ characters). The credentials are printed
+ * unless SEED_PASSWORD is set (6+ characters). The credentials are printed
  * and appended to seed-accounts.log (mode 0600, git-ignored); existing
  * accounts keep their password unless --reset-passwords is given.
  */

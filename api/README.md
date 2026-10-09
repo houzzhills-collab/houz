@@ -36,7 +36,7 @@ SEED_PASSWORD='houzzhills dev 2026' npm run db:seed -- --reset-passwords   # sam
 | Finance | `finance@houzzhills.test` |
 | Auditor | `auditor@houzzhills.test` |
 
-- Passwords are random unless `SEED_PASSWORD` (12+ characters) is set.
+- Passwords are random unless `SEED_PASSWORD` (6+ characters) is set.
 - Each run prints the log and appends it to `api/seed-accounts.log` (owner-only file permissions, git-ignored).
 - Re-running is safe. Existing accounts are left alone, and their password is shown as unchanged.
 - Seed accounts sign straight in. Staff onboarded in the app must still change their temporary password.

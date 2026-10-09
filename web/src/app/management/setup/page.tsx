@@ -73,8 +73,8 @@ export default function SetupPage() {
                 <input name="email" type="email" autoComplete="email" required maxLength={254} />
               </label>
               <label className="form-field">
-                <span>Create a password (12+ characters)</span>
-                <input name="password" type="password" minLength={12} maxLength={256} autoComplete="new-password" required />
+                <span>Create a password (6+ characters)</span>
+                <input name="password" type="password" minLength={6} maxLength={256} autoComplete="new-password" required />
               </label>
               <button className="button-primary auth-submit" disabled={busy}>
                 {busy ? "Creating account…" : "Create owner account"}
