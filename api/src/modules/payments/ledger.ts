@@ -96,7 +96,7 @@ export async function refreshReservationPayment(tx: Sql, reservationId: string):
   const row = await tx.one<{ payment_status: PaymentState }>(
     `UPDATE reservations r
         SET payment_status = CASE
-              WHEN t.settled >= r.amount_kobo THEN 'paid'
+              WHEN t.settled >= r.amount_kobo + r.extra_charges_kobo THEN 'paid'
               WHEN t.pending > 0 THEN 'pending'
               WHEN t.settled > 0 THEN 'part_paid'
               ELSE 'unpaid' END,

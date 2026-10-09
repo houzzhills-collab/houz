@@ -171,4 +171,42 @@ describe.skipIf(!integration)("staff reservations, payments and the payment regi
     expect((await resolve()).json()).toMatchObject({ code: "ALREADY_RESOLVED" });
     expect((await app.db.query("SELECT status FROM reservations WHERE id = $1", [reservation.id]))[0].status).toBe("confirmed");
   });
+
+  it("lists front-desk views and reports check-out incidents with extra charges", async () => {
+    const room = await seedRoom(app, propertyId, { rateKobo: 1_000_000, status: "inspected" });
+    const guest = `Incident ${randomUUID().slice(0, 8)}`;
+    const stay = (await createReservation(desk.headers, { name: guest, roomId: room.id, checkIn: lagosDate(0), checkOut: lagosDate(1) })).json<{ reservation: { id: string } }>().reservation;
+    const view = async (name: string) =>
+      (await app.inject({ url: `${M}/reservations?stay=${name}&q=${encodeURIComponent(guest)}`, headers: desk.headers })).json<{ reservations: Array<{ id: string }> }>().reservations.map((row) => row.id);
+    expect(await view("arrivals")).toEqual([stay.id]);
+    expect(await view("in_house")).toEqual([]);
+
+    const patch = (payload: Record<string, unknown>) => app.inject({ method: "PATCH", url: `${M}/reservations/${stay.id}`, headers: desk.headers, payload });
+    expect((await patch({ status: "checked_in", incidents: [{ category: "noise" }] })).json()).toMatchObject({ code: "VALIDATION_FAILED" });
+    expect((await patch({ status: "checked_in" })).statusCode).toBe(200);
+    expect(await view("in_house")).toEqual([stay.id]);
+    expect(await view("departing")).toEqual([stay.id]);
+    expect(await view("overstay")).toEqual([]);
+    await app.db.query("UPDATE reservations SET check_in = check_in - 3, check_out = check_out - 2 WHERE id = $1", [stay.id]);
+    expect(await view("overstay")).toEqual([stay.id]);
+    const summary = await app.inject({ url: `${M}/reservations/stay-summary`, headers: desk.headers });
+    expect(summary.json<{ overstay: number }>().overstay).toBeGreaterThanOrEqual(1);
+
+    expect((await patch({ status: "checked_out", incidents: [{ category: "other" }] })).json()).toMatchObject({ code: "INCIDENT_DESCRIPTION_REQUIRED" });
+    await pay(stay.id, { amountKobo: 1_000_000, method: "cash" });
+    const out = await patch({
+      status: "checked_out",
+      incidents: [
+        { category: "broken_items", description: "Cracked TV screen", chargeKobo: 2_500_000 },
+        { category: "smoking", chargeKobo: 500_000 },
+        { category: "other", description: "Pet in room" },
+      ],
+    });
+    expect(out.statusCode).toBe(200);
+    const [row] = (await app.inject({ url: `${M}/reservations?q=${encodeURIComponent(guest)}`, headers: desk.headers })).json<{ reservations: Array<Record<string, unknown>> }>().reservations;
+    expect(row).toMatchObject({ status: "checked_out", charges_kobo: "3000000", payment_status: "part_paid", actions: { record_payment: true } });
+    expect((row!.incidents as Array<{ category: string }>).map((incident) => incident.category)).toEqual(["broken_items", "smoking", "other"]);
+    expect((await pay(stay.id, { amountKobo: 3_000_001, method: "cash" })).json()).toMatchObject({ code: "OVERPAYMENT" });
+    expect((await pay(stay.id, { amountKobo: 3_000_000, method: "cash" })).json()).toMatchObject({ payment: { paid: true } });
+  });
 });

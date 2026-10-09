@@ -63,6 +63,7 @@ export type Reference = {
   paymentProviders: Option[];
   exceptionKinds: Option[];
   guestIdTypes: Option[];
+  incidentCategories: Option[];
 };
 
 export type RoomStatus = "vacant_clean" | "vacant_dirty" | "occupied" | "inspected" | "maintenance" | "out_of_order";
@@ -97,6 +98,9 @@ export type Reservation = {
   guests_count?: number;
   amount_kobo: string;
   paid_kobo?: string;
+  /** Extra charges from check-out incidents, owed on top of `amount_kobo`. */
+  charges_kobo?: string;
+  incidents?: ReservationIncident[];
   status: ReservationStatus;
   payment_status: ReservationPaymentStatus;
   source?: string;
@@ -111,6 +115,14 @@ export type Reservation = {
    */
   actions: { next_statuses: ReservationStatus[]; record_payment: boolean; edit?: "full" | "stay_end" | "contact" | "none"; identity?: boolean };
 };
+
+export type IncidentCategory = "broken_items" | "missing_items" | "overstay" | "noise" | "smoking" | "other";
+export type ReservationIncident = { id: string; category: IncidentCategory; description: string | null; charge_kobo: string; recorded_by: string | null; created_at: string };
+/** An incident reported at check-out; `description` is required for "other". */
+export type IncidentInput = { category: IncidentCategory; description?: string; chargeKobo?: number };
+/** Front-desk views for today: due to check in, checked in, due out today or tomorrow, past their check-out date. */
+export type StayView = "arrivals" | "in_house" | "departing" | "overstay";
+export type StaySummary = Record<StayView, number> & { today: string };
 
 export type GuestIdType = "national_id" | "passport" | "drivers_license" | "voters_card" | "other";
 export type GuestIdSide = "front" | "back";

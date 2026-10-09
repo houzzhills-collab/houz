@@ -37,6 +37,15 @@ export const GUEST_ID_TYPE_LABELS = {
   other: "Other government ID",
 } as const;
 
+export const INCIDENT_CATEGORY_LABELS = {
+  broken_items: "Broken or damaged items",
+  missing_items: "Missing items",
+  overstay: "Overstay",
+  noise: "Noise pollution",
+  smoking: "Smoking",
+  other: "Other violation",
+} as const;
+
 export const EXCEPTION_TITLES: Record<string, string> = {
   late_success: "Paid after the hold expired",
   amount_mismatch: "Amount does not match",
@@ -60,4 +69,5 @@ export const REFERENCE = {
   paymentProviders: options({ none: "Off (no online payment)", paystack: "Paystack", flutterwave: "Flutterwave" }),
   exceptionKinds: options(EXCEPTION_TITLES),
   guestIdTypes: options(GUEST_ID_TYPE_LABELS),
+  incidentCategories: options(INCIDENT_CATEGORY_LABELS),
 };

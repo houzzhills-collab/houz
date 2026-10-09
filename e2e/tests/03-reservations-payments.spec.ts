@@ -61,11 +61,15 @@ test.describe("reservations and the payment register", () => {
     expect(csv).toContain("GTB 0042 Grace");
   });
 
-  test("check-in and check-out follow the API's allowed actions; cancellation needs a reason", async ({ page }) => {
+  test("check-in and check-out follow the API's allowed actions; check-out reports incidents; cancellation needs a reason", async ({ page }) => {
     const row = page.getByRole("row", { name: /Grace Guest/ });
     await expect(row).toContainText("Paid");
-    await row.getByRole("combobox").selectOption({ label: "Checked in" });
+    await row.getByRole("button", { name: "Check in" }).click();
+    await dialog(page).getByRole("button", { name: "Check in" }).click();
     await expect(row).toContainText("Checked in");
+    await page.getByRole("tab", { name: /In house/ }).click();
+    await expect(row).toBeVisible();
+    await page.getByRole("tab", { name: /All/ }).click();
     await openSection(page, "Rooms");
     await expect(page.getByRole("row", { name: /^101/ })).toContainText("Grace Guest");
     // A room with a guest checked in cannot be marked vacant or inspected: only service states are offered.
@@ -73,7 +77,15 @@ test.describe("reservations and the payment register", () => {
 
     await openSection(page, "Reservations");
     await row.getByRole("button", { name: "Check out" }).click();
+    await dialog(page).getByRole("button", { name: "Broken or damaged items" }).click();
+    await dialog(page).getByLabel("Extra charge (₦, optional)").fill("15000");
+    await dialog(page).getByLabel("Details (optional)").fill("Cracked bedside lamp");
+    await dialog(page).getByRole("button", { name: "Report and check out" }).click();
+    await expect(page.getByRole("status")).toHaveText(/checked out · ₦15,000/);
     await expect(row).toContainText("Checked out");
+    await row.click();
+    await expect(page.getByText("Cracked bedside lamp")).toBeVisible();
+    await page.keyboard.press("Escape");
 
     await page.getByRole("button", { name: "New reservation" }).click();
     await dialog(page).getByLabel("Guest full name").fill("Later Guest");
@@ -83,13 +95,14 @@ test.describe("reservations and the payment register", () => {
     await dialog(page).getByRole("button", { name: "Save changes" }).click();
     const later = page.getByRole("row", { name: /Later Guest/ });
     // Arrival is in the future, so check-in is not offered yet.
-    await expect(later.getByRole("combobox").locator("option")).toHaveText(["Stay action", "Cancelled"]);
-    answerNextDialog(page, "Guest changed plans");
+    await expect(later.getByRole("combobox").locator("option")).toHaveText(["More", "Cancelled"]);
     await later.getByRole("combobox").selectOption({ label: "Cancelled" });
+    await dialog(page).getByLabel("Reason (recorded in the audit log)").fill("Guest changed plans");
+    await dialog(page).getByRole("button", { name: "Cancel reservation" }).click();
     await expect(later).toContainText("Cancelled");
 
     await page.getByLabel("Search reservations").fill("Later");
     await expect(page.getByRole("row", { name: /Grace Guest/ })).toHaveCount(0);
-    await expect(page.getByText("Matching “Later”")).toBeVisible();
+    await expect(page.getByRole("row", { name: /Later Guest/ })).toBeVisible();
   });
 });

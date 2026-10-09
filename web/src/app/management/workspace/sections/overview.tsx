@@ -2,14 +2,24 @@
 
 import { useState } from "react";
 import { Activity, ArrowDownRight, BedDouble, Check, CircleDollarSign, Clock3, Plus, ShieldCheck, Users, Utensils } from "lucide-react";
-import { api, type Dashboard } from "@/lib/api";
+import { api, type Dashboard, type StaySummary } from "@/lib/api";
 import { humanize, money, timeLabel } from "../format";
 import { Empty, InlineError, Metric, Tip, useResource, type SectionProps } from "../ui";
+import { FrontDesk } from "./front-desk";
 import { NewReservationModal, ReservationTable, useReservationActions } from "./reservations";
 
-export function OverviewSection({ notify, refreshKey, can, reference, property, onOpen }: SectionProps & { onOpen: (section: string) => void }) {
+export function OverviewSection({ notify, refreshKey, can, reference, property, onOpen }: SectionProps & { onOpen: (section: string, intent?: string) => void }) {
   const dashboard = useResource<Dashboard>(() => api.dashboard.get(), String(refreshKey));
-  const actions = useReservationActions(notify, () => void dashboard.reload(), reference, dashboard.data?.reservations ?? []);
+  const stays = useResource<StaySummary | null>(() => (can("reservations:read") ? api.reservations.staySummary() : Promise.resolve(null)), String(refreshKey));
+  const actions = useReservationActions(
+    notify,
+    () => {
+      void dashboard.reload();
+      void stays.reload();
+    },
+    reference,
+    dashboard.data?.reservations ?? [],
+  );
   const [creating, setCreating] = useState(false);
   const data = dashboard.data;
   const metrics = data?.metrics ?? {};
@@ -121,6 +131,8 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
           </div>
         </article>
       </section>
+
+      {stays.data && <FrontDesk summary={stays.data} onOpen={(intent) => onOpen("Reservations", intent)} />}
 
       {can("reservations:read") && (
         <section className="panel bookings-panel">

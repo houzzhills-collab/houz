@@ -446,3 +446,32 @@ kbd { display:inline-block;padding:2px 6px;border:1px solid #dfe2e6;border-botto
 @media (max-width:1120px) { .report-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }.report-kpi-row { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:850px) { .report-grid { grid-template-columns:1fr; } }
 @media (max-width:620px) { .report-stats { gap:8px; }.report-stat { padding:12px; }.report-stat > strong { font-size:21px; }.report-kpi-row { grid-template-columns:repeat(2,minmax(0,1fr)); }.range-groups { grid-template-columns:repeat(2,minmax(0,1fr)); }.report-export { margin-left:0; }.report-panel { padding:14px 12px; } }
+
+/* ---- Front desk: check-in/out, incidents, overstays ---- */
+.nav-badges { display:flex; gap:4px; margin-left:auto; }
+.nav-badge { min-width:19px; padding:2px 6px; border-radius:9px; background:#f7f2e7; color:#9a7b3d; font:650 11px var(--font-inter),sans-serif; font-style:normal; text-align:center; }
+.nav-badge.is-alert { background:#f8eeeb; color:#aa6d5e; }
+.booking-tabs button.tab-alert span { color:#aa6d5e; font-weight:650; }
+.stay-button { border:1px solid #d9c9a5; border-radius:5px; background:#fdfaf3; color:#8a6a2e; padding:5px 9px; font:600 12px var(--font-inter),sans-serif; cursor:pointer; white-space:nowrap; }
+.stay-button:hover { background:#f6eedb; }
+.front-desk-panel { margin-bottom:14px; padding:15px 17px; }
+.front-desk-tiles { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:14px; }
+.front-desk-tile { display:flex; flex-direction:column; align-items:flex-start; gap:5px; padding:11px; border:1px solid #eff0f2; border-radius:6px; background:#fff; text-align:left; cursor:pointer; }
+.front-desk-tile:hover { border-color:#d9c9a5; background:#fdfcf9; }
+.front-desk-tile span { display:flex; align-items:center; gap:6px; color:#80858f; font-size:12px; }
+.front-desk-tile strong { color:#3a4148; font-size:22px; font-weight:620; }
+.front-desk-tile small { color:#a0a3ab; font-size:12px; }
+.front-desk-tile.is-alert { border-color:#efcfca; background:#fff6f4; }
+.front-desk-tile.is-alert strong,.front-desk-tile.is-alert span { color:#aa6d5e; }
+.incident-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.incident-chip { display:inline-flex; align-items:center; gap:4px; border:1px solid #e2e5e9; border-radius:14px; background:#fff; color:#5f646e; padding:5px 10px; font:500 12px var(--font-inter),sans-serif; cursor:pointer; }
+.incident-chip:hover { border-color:#c5a35e; color:#8a6a2e; }
+.incident-editor { display:grid; gap:10px; padding:11px; border:1px solid #eceef1; border-radius:6px; background:#fafbfc; }
+.incident-remove { justify-self:start; display:inline-flex; align-items:center; gap:5px; }
+.incident-list { display:grid; gap:8px; }
+.incident-item { display:flex; justify-content:space-between; gap:12px; padding:9px 11px; border:1px solid #f0e0dc; border-radius:6px; background:#fffaf9; }
+.incident-item strong { color:#4b5059; font-size:13px; }
+.incident-item p { margin:4px 0; color:#6a6f78; font-size:13px; line-height:1.5; white-space:pre-wrap; }
+.incident-item small { color:#a0a3ab; font-size:12px; }
+.incident-item b { color:#aa6d5e; font-size:13px; white-space:nowrap; }
+@media (max-width:720px) { .front-desk-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }

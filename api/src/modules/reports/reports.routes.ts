@@ -140,7 +140,7 @@ async function collect(sql: Sql, propertyId: string, period: Period, withTopItem
     `SELECT
        (SELECT count(*)::int FROM pos_orders WHERE property_id = $1 AND status = 'voided' AND ${within("created_at")}) AS voided,
        (SELECT count(*)::int FROM guests WHERE property_id = $1 AND ${within("created_at")}) AS new_guests,
-       (SELECT coalesce(sum(greatest(r.amount_kobo - coalesce(paid.kobo, 0), 0)), 0)::text
+       (SELECT coalesce(sum(greatest(r.amount_kobo + r.extra_charges_kobo - coalesce(paid.kobo, 0), 0)), 0)::text
           FROM reservations r
           LEFT JOIN LATERAL (SELECT sum(amount_kobo) AS kobo FROM payments WHERE reservation_id = r.id AND status = 'settled') paid ON true
          WHERE r.property_id = $1 AND r.status IN ${SOLD} AND r.check_in BETWEEN $2::date AND $3::date) AS outstanding`,

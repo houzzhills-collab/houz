@@ -5,6 +5,9 @@ import { IdParams, IsoDate, KoboString, Nullable, StringEnum, Text, Timestamp, U
 export const RESERVATION_STATUSES = ["hold", "pending_payment", "confirmed", "checked_in", "checked_out", "cancelled", "no_show", "expired"] as const;
 export const GUEST_ID_TYPES = ["national_id", "passport", "drivers_license", "voters_card", "other"] as const;
 export const GUEST_ID_SIDES = ["front", "back"] as const;
+/** Front-desk views of today's stays (business date): see STAY_VIEW_SQL in the service. */
+export const INCIDENT_CATEGORIES = ["broken_items", "missing_items", "overstay", "noise", "smoking", "other"] as const;
+export const STAY_VIEWS = ["arrivals", "in_house", "departing", "overstay"] as const;
 
 const GuestIdDocument = Type.Object(
   {
@@ -16,6 +19,15 @@ const GuestIdDocument = Type.Object(
   },
   { description: "The guest's government-issued ID, or null when none is recorded" },
 );
+
+const Incident = Type.Object({
+  id: Uuid,
+  category: StringEnum(INCIDENT_CATEGORIES),
+  description: Nullable(Type.String()),
+  charge_kobo: KoboString,
+  recorded_by: Nullable(Type.String()),
+  created_at: Timestamp,
+});
 
 export const ReservationRow = Type.Object({
   id: Uuid,
@@ -31,6 +43,8 @@ export const ReservationRow = Type.Object({
   guests_count: Type.Integer(),
   amount_kobo: KoboString,
   paid_kobo: KoboString,
+  charges_kobo: Type.String({ pattern: "^[0-9]+$", description: "Extra charges from incidents, owed on top of amount_kobo" }),
+  incidents: Type.Array(Incident, { description: "Incidents reported for this stay, oldest first" }),
   status: Type.String(),
   payment_status: Type.String(),
   source: Type.String(),
@@ -55,11 +69,13 @@ const security = [{ bearerAuth: [] }];
 export const ListReservationsSchema = {
   tags: ["reservations"],
   summary: "List reservations",
-  description: "Newest check-in first. `from`/`to` select stays overlapping [from, to) and may span at most 366 days. `q` matches guest name or reference.",
+  description:
+    "Newest check-in first. `from`/`to` select stays overlapping [from, to) and may span at most 366 days. `q` matches guest name or reference. `stay` selects a front-desk view for today: arrivals (confirmed, due to check in), in_house (checked in), departing (checked in, due out today or tomorrow) or overstay (checked in past the check-out date).",
   security,
   querystring: Type.Object(
     {
       status: Type.Optional(Type.Array(StringEnum(RESERVATION_STATUSES), { maxItems: 8 })),
+      stay: Type.Optional(StringEnum(STAY_VIEWS)),
       from: Type.Optional(IsoDate),
       to: Type.Optional(IsoDate),
       q: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
@@ -68,6 +84,17 @@ export const ListReservationsSchema = {
     { additionalProperties: false },
   ),
   response: { 200: Type.Object({ reservations: Type.Array(ReservationRow), nextCursor: NextCursor }), ...errorResponses(401, 403, 422) },
+};
+
+export const StaySummarySchema = {
+  tags: ["reservations"],
+  summary: "Front-desk counts for today",
+  description: "How many stays are in each `stay` view of GET /reservations, for the business date.",
+  security,
+  response: {
+    200: Type.Object({ arrivals: Type.Integer(), in_house: Type.Integer(), departing: Type.Integer(), overstay: Type.Integer(), today: IsoDate }),
+    ...errorResponses(401, 403),
+  },
 };
 
 export const CreateReservationSchema = {
@@ -95,13 +122,26 @@ export const UpdateReservationSchema = {
   tags: ["reservations"],
   summary: "Change a reservation's stay status",
   description:
-    "Allowed: confirmed → checked_in | cancelled | no_show; checked_in → checked_out; pending_payment → cancelled. Check-in and no-show need the arrival date to have come. Cancellation and no-show require a reason, which is audited.",
+    "Allowed: confirmed → checked_in | cancelled | no_show; checked_in → checked_out; pending_payment → cancelled. Check-in and no-show need the arrival date to have come. Cancellation and no-show require a reason, which is audited. On check-out, `incidents` reports damage, missing items, overstay, noise, smoking or other violations; their charges are added to the guest's balance, which can still be paid after check-out.",
   security,
   params: IdParams,
   body: Type.Object(
     {
       status: Type.Union([Type.Literal("checked_in"), Type.Literal("checked_out"), Type.Literal("cancelled"), Type.Literal("no_show")]),
       reason: Type.Optional(Type.String({ minLength: 3, maxLength: 500 })),
+      incidents: Type.Optional(
+        Type.Array(
+          Type.Object(
+            {
+              category: StringEnum(INCIDENT_CATEGORIES),
+              description: Type.Optional(Type.String({ maxLength: 2000, description: "What happened; required for \"other\"" })),
+              chargeKobo: Type.Optional(Type.Integer({ minimum: 0, maximum: 100_000_000_000, description: "Extra fee in integer kobo (NGN × 100)" })),
+            },
+            { additionalProperties: false },
+          ),
+          { maxItems: 20, description: "Only with status checked_out" },
+        ),
+      ),
     },
     { additionalProperties: false },
   ),

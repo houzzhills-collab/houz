@@ -27,6 +27,7 @@ import type {
   Reference,
   Report,
   Reservation,
+  StaySummary,
   Room,
   RoomHistoryEntry,
   SettingsSnapshot,
@@ -262,12 +263,13 @@ export function createHttpClient(baseUrl: string): ApiClient {
 
     reservations: {
       async list(filters = {}) {
-        const query = new URLSearchParams({ limit: String(PAGE_SIZE), ...(filters.q ? { q: filters.q } : {}) });
+        const query = new URLSearchParams({ limit: String(PAGE_SIZE), ...(filters.q ? { q: filters.q } : {}), ...(filters.stay ? { stay: filters.stay } : {}) });
         return (await request<{ reservations: Reservation[] }>("GET", `/management/reservations?${query.toString()}`)).reservations;
       },
+      staySummary: () => request<StaySummary>("GET", "/management/reservations/stay-summary"),
       create: async (input) => (await request<{ reservation: Reservation }>("POST", "/management/reservations", { body: input })).reservation,
-      async updateStatus(id, status, reason) {
-        await request<unknown>("PATCH", `/management/reservations/${encodeURIComponent(id)}`, { body: reason ? { status, reason } : { status } });
+      async updateStatus(id, status, reason, incidents) {
+        await request<unknown>("PATCH", `/management/reservations/${encodeURIComponent(id)}`, { body: { status, ...(reason ? { reason } : {}), ...(incidents?.length ? { incidents } : {}) } });
       },
       updateDetails: async (id, changes) =>
         (await request<{ reservation: Reservation }>("PATCH", `/management/reservations/${encodeURIComponent(id)}/details`, { body: changes })).reservation,

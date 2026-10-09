@@ -49,8 +49,11 @@ import type {
   Report,
   ReportQuery,
   RecordPaymentInput,
+  IncidentInput,
   Reservation,
   ReservationStatus,
+  StaySummary,
+  StayView,
   Room,
   RoomStatus,
   SetupInput,
@@ -84,11 +87,13 @@ export interface ApiClient {
     get(query: ReportQuery): Promise<Report>;
   };
   reservations: {
-    /** Most recent stays; `q` searches guest name and reference on the server. */
-    list(filters?: { q?: string }): Promise<Reservation[]>;
+    /** Most recent stays; `q` searches guest name and reference on the server, `stay` picks a front-desk view. */
+    list(filters?: { q?: string; stay?: StayView }): Promise<Reservation[]>;
+    /** How many stays are in each front-desk view today. */
+    staySummary(): Promise<StaySummary>;
     create(input: NewReservationInput): Promise<Reservation>;
-    /** `reason` is required (and audited) for cancellations and no-shows. */
-    updateStatus(id: string, status: ReservationStatus, reason?: string): Promise<void>;
+    /** `reason` is required (and audited) for cancellations and no-shows; `incidents` are reported at check-out. */
+    updateStatus(id: string, status: ReservationStatus, reason?: string, incidents?: IncidentInput[]): Promise<void>;
     /** Guest details, dates, room or guest count; `actions.edit` says what may change. */
     updateDetails(id: string, changes: ReservationChanges): Promise<Reservation>;
     payments(id: string): Promise<ReservationPayment[]>;

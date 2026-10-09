@@ -105,7 +105,8 @@ const dashboardRoutes: FastifyPluginAsyncTypebox = async (app) => {
           ? await sql.rows<ReservationRecord>(
               `${RESERVATION_SELECT}
                 WHERE r.property_id = $1 AND r.status IN ('confirmed', 'checked_in', 'pending_payment')
-                  AND r.check_in <= ${TODAY} + 3 AND r.check_out >= ${TODAY}
+                  -- Guests still checked in past their check-out date (overstays) stay listed until checked out.
+                  AND r.check_in <= ${TODAY} + 3 AND (r.check_out >= ${TODAY} OR r.status = 'checked_in')
                 ORDER BY r.check_in, r.created_at DESC
                 LIMIT 30`,
               [propertyId],

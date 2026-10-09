@@ -2,9 +2,23 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { CreditCard, IdCard, Pencil, Plus, Search } from "lucide-react";
-import { api, errorMessage, type GuestIdInput, type GuestIdSide, type GuestIdType, type PaymentMethod, type Reference, type Reservation, type ReservationStatus, type Room } from "@/lib/api";
-import { dateLabel, dateTimeLabel, humanize, initials, money, optionLabel, text, toKobo } from "../format";
+import { CreditCard, IdCard, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  api,
+  errorMessage,
+  type GuestIdInput,
+  type GuestIdSide,
+  type GuestIdType,
+  type IncidentCategory,
+  type PaymentMethod,
+  type Reference,
+  type Reservation,
+  type ReservationStatus,
+  type Room,
+  type StaySummary,
+  type StayView,
+} from "@/lib/api";
+import { dateLabel, dateTimeLabel, humanize, initials, money, optionLabel, propertyDate, text, toKobo } from "../format";
 import { DetailList, Drawer, Empty, Field, InlineError, Modal, Tip, useAction, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
 
 const STATUS_TONE: Record<string, string> = { checked_in: "status-green", confirmed: "status-gold", pending_payment: "status-gold", hold: "status-gold", checked_out: "status-blue" };
@@ -19,6 +33,133 @@ export function StatusBadge({ status, reference }: { status: string; reference: 
 }
 
 const nightsOf = (row: Reservation) => Math.round((Date.parse(row.check_out) - Date.parse(row.check_in)) / 86_400_000);
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+
+/** What the guest still owes: the stay plus incident charges, less settled payments. */
+export const balanceOf = (row: Reservation) => BigInt(row.amount_kobo) + BigInt(row.charges_kobo ?? "0") - BigInt(row.paid_kobo ?? "0");
+
+/** Due out or overstaying, for an in-house guest; null otherwise. */
+export function departureFlag(row: Reservation, today = propertyDate()): { label: string; tone: "status-red" | "status-gold" } | null {
+  if (row.status !== "checked_in") return null;
+  const late = daysBetween(row.check_out, today);
+  if (late > 0) return { label: `Overstay · ${late} night${late === 1 ? "" : "s"}`, tone: "status-red" };
+  if (late === 0) return { label: "Due out today", tone: "status-gold" };
+  if (late === -1) return { label: "Due out tomorrow", tone: "status-gold" };
+  return null;
+}
+
+function IncidentList({ reservation, reference }: { reservation: Reservation; reference: Reference }) {
+  const incidents = reservation.incidents ?? [];
+  if (incidents.length === 0) return null;
+  return (
+    <section className="detail-section">
+      <h3>
+        Incidents
+        <Tip text="Problems reported when the guest checked out, such as damage, missing items, overstay, noise or smoking, and any extra charge added to the bill." />
+      </h3>
+      <div className="incident-list">
+        {incidents.map((incident) => (
+          <div key={incident.id} className="incident-item">
+            <div>
+              <strong>{optionLabel(reference.incidentCategories, incident.category)}</strong>
+              {incident.description && <p>{incident.description}</p>}
+              <small>
+                {dateTimeLabel(incident.created_at)}
+                {incident.recorded_by ? ` · ${incident.recorded_by}` : ""}
+              </small>
+            </div>
+            {BigInt(incident.charge_kobo) > 0n && <b>{money(incident.charge_kobo)}</b>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type IncidentDraft = { key: number; category: IncidentCategory; description: string; charge: string };
+
+/** Check-out with an optional incident report; charges are added to what the guest owes. */
+function CheckOutModal({ reservation, reference, notify, onClose, onDone }: { reservation: Reservation; reference: Reference; notify: Notify; onClose: () => void; onDone: () => void }) {
+  const overstay = daysBetween(reservation.check_out, propertyDate());
+  const [incidents, setIncidents] = useState<IncidentDraft[]>(() =>
+    overstay > 0 ? [{ key: 0, category: "overstay", description: `Stayed ${overstay} night${overstay === 1 ? "" : "s"} past the ${dateLabel(reservation.check_out)} check-out`, charge: "" }] : [],
+  );
+  const action = useAction();
+  const add = (category: IncidentCategory) => setIncidents((list) => [...list, { key: (list.at(-1)?.key ?? 0) + 1, category, description: "", charge: "" }]);
+  const change = (key: number, patch: Partial<IncidentDraft>) => setIncidents((list) => list.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+  const charges = incidents.reduce((sum, item) => sum + BigInt(toKobo(item.charge || "0")), 0n);
+  const owed = balanceOf(reservation) + charges;
+
+  return (
+    <Modal
+      title={`Check out ${reservation.guest_name}`}
+      description={`${reservation.reference} · ${reservation.room_number ? `Room ${reservation.room_number}` : reservation.room_type}. Report anything that went wrong during the stay; leave the list empty if all is well.`}
+      submitLabel={incidents.length ? "Report and check out" : "Check out"}
+      busy={action.busy}
+      error={action.error}
+      wide
+      onClose={onClose}
+      onSubmit={() =>
+        action.run(async () => {
+          const other = incidents.find((item) => item.category === "other" && !item.description.trim());
+          if (other) throw new Error("Describe the violation for incidents marked “Other violation”");
+          await api.reservations.updateStatus(
+            reservation.id,
+            "checked_out",
+            undefined,
+            incidents.map((item) => ({ category: item.category, ...(item.description.trim() ? { description: item.description.trim() } : {}), ...(item.charge ? { chargeKobo: toKobo(item.charge) } : {}) })),
+          );
+          notify(owed > 0n ? `${reservation.reference} checked out · ${money(owed)} still owed` : `${reservation.reference} checked out`);
+          onDone();
+        })
+      }
+    >
+      <p className="form-section-title">Incident report</p>
+      <div className="incident-chips" role="group" aria-label="Add an incident">
+        {reference.incidentCategories.map((option) => (
+          <button key={option.value} type="button" className="incident-chip" onClick={() => add(option.value as IncidentCategory)}>
+            <Plus size={13} /> {option.label}
+          </button>
+        ))}
+      </div>
+      {incidents.length === 0 && <p className="modal-help">No incidents. Add one above for broken or missing items, an overstay, noise, smoking or another violation.</p>}
+      {incidents.map((item) => (
+        <div key={item.key} className="incident-editor">
+          <div className="form-row">
+            <Field label="Incident" tip="What kind of problem it was.">
+              <select value={item.category} onChange={(event) => change(item.key, { category: event.target.value as IncidentCategory })}>
+                {reference.incidentCategories.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Extra charge (₦, optional)" tip="A fee for this incident, e.g. the cost of a broken item or an extra night. It is added to what the guest owes and can be paid after check-out.">
+              <input type="number" min="0" step="1" value={item.charge} onChange={(event) => change(item.key, { charge: event.target.value })} placeholder="0" />
+            </Field>
+          </div>
+          <Field label={item.category === "other" ? "Details" : "Details (optional)"} tip="What happened: which items, where, when, and anything the guest said. Kept with the booking for staff.">
+            <textarea rows={2} maxLength={2000} required={item.category === "other"} value={item.description} onChange={(event) => change(item.key, { description: event.target.value })} />
+          </Field>
+          <button type="button" className="button-ghost-danger incident-remove" onClick={() => setIncidents((list) => list.filter((other) => other.key !== item.key))}>
+            <Trash2 size={14} /> Remove
+          </button>
+        </div>
+      ))}
+      <DetailList
+        title="Bill"
+        rows={[
+          ["Stay total", money(reservation.amount_kobo)],
+          ["Earlier charges", BigInt(reservation.charges_kobo ?? "0") > 0n ? money(reservation.charges_kobo) : null],
+          ["New charges", charges > 0n ? money(charges) : null],
+          ["Paid", money(reservation.paid_kobo ?? "0")],
+          ["Balance after check-out", money(owed), "What the guest will still owe. Payments can still be recorded on the booking after check-out."],
+        ]}
+      />
+    </Modal>
+  );
+}
 
 function ReservationPayments({ reservation, reference, refreshKey }: { reservation: Reservation; reference: Reference; refreshKey: string }) {
   const payments = useResource(() => api.reservations.payments(reservation.id), `${reservation.id}:${refreshKey}`);
@@ -323,6 +464,7 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
   const [paying, setPaying] = useState<Reservation | null>(null);
   const [editing, setEditing] = useState<Reservation | null>(null);
   const [identifying, setIdentifying] = useState<Reservation | null>(null);
+  const [checkingOut, setCheckingOut] = useState<Reservation | null>(null);
   const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [version, setVersion] = useState(0);
@@ -334,6 +476,10 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
   };
 
   const changeStatus = async (reservation: Reservation, status: ReservationStatus) => {
+    if (status === "checked_out") {
+      setCheckingOut(reservation);
+      return;
+    }
     const label = optionLabel(reference.reservationStatuses, status).toLowerCase();
     const destructive = status === "cancelled" || status === "no_show";
     const accepted = await confirm(
@@ -345,7 +491,11 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
             danger: true,
             reason: "Reason (recorded in the audit log)",
           }
-        : { title: `${status === "checked_in" ? "Check in" : "Check out"} ${reservation.guest_name}?`, message: `${reservation.reference} will be marked ${label}.`, confirmLabel: status === "checked_in" ? "Check in" : "Check out" },
+        : {
+            title: `Check in ${reservation.guest_name}?`,
+            message: `${reservation.reference} will be marked ${label}${reservation.room_number ? ` and room ${reservation.room_number} occupied` : ""}. Balance due: ${money(balanceOf(reservation))}.`,
+            confirmLabel: "Check in",
+          },
     );
     if (accepted === null) return;
     try {
@@ -357,7 +507,7 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
     }
   };
 
-  const outstanding = paying ? BigInt(paying.amount_kobo) - BigInt(paying.paid_kobo ?? "0") : 0n;
+  const outstanding = paying ? balanceOf(paying) : 0n;
   const open = rows.find((row) => row.id === openId) ?? null;
 
   const startPayment = (reservation: Reservation) => {
@@ -372,7 +522,12 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
         <Drawer
           title={open.guest_name}
           subtitle={open.reference}
-          badge={<StatusBadge status={open.status} reference={reference} />}
+          badge={
+            <>
+              <StatusBadge status={open.status} reference={reference} />
+              <DepartureFlag reservation={open} />
+            </>
+          }
           onClose={() => setOpenId(null)}
           actions={
             <>
@@ -440,11 +595,13 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
             title="Money"
             rows={[
               ["Stay total", money(open.amount_kobo), "The full price of the stay: nightly rate × nights."],
+              ["Extra charges", BigInt(open.charges_kobo ?? "0") > 0n ? money(open.charges_kobo) : null, "Fees added for incidents reported at check-out. See Incidents below."],
               ["Paid", money(open.paid_kobo ?? "0"), "Confirmed (settled) payments only. Bank transfers count once an owner or manager confirms them."],
-              ["Balance", money(BigInt(open.amount_kobo) - BigInt(open.paid_kobo ?? "0")), "What the guest still owes: stay total minus paid."],
+              ["Balance", money(balanceOf(open)), "What the guest still owes: stay total plus extra charges, minus paid."],
               ["Payment status", optionLabel(reference.paymentStatuses, open.payment_status), "Unpaid: nothing confirmed yet. Part paid: some paid, a balance remains. Pending confirmation: a transfer is waiting to be confirmed. Paid: settled in full."],
             ]}
           />
+          <IncidentList reservation={open} reference={reference} />
           <ReservationPayments reservation={open} reference={reference} refreshKey={String(version)} />
         </Drawer>
       )}
@@ -455,6 +612,18 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
+            changed();
+          }}
+        />
+      )}
+      {checkingOut && (
+        <CheckOutModal
+          reservation={checkingOut}
+          reference={reference}
+          notify={notify}
+          onClose={() => setCheckingOut(null)}
+          onDone={() => {
+            setCheckingOut(null);
             changed();
           }}
         />
@@ -521,6 +690,11 @@ export function useReservationActions(notify: Notify, onChanged: () => void, ref
   return { changeStatus, startPayment, openReservation: (row: Reservation) => setOpenId(row.id), dialogs };
 }
 
+export function DepartureFlag({ reservation }: { reservation: Reservation }) {
+  const flag = departureFlag(reservation);
+  return flag ? <span className={`status ${flag.tone}`}>{flag.label}</span> : null;
+}
+
 /** Renders the actions the API allows for each reservation; it holds no rules of its own. */
 export function ReservationTable({
   rows,
@@ -546,13 +720,13 @@ export function ReservationTable({
             <th data-tip="Check-in date — check-out date. The check-out night isn't charged.">STAY DATES</th>
             <th data-tip="The full price of the stay, before any payments.">BOOKING VALUE</th>
             <th data-tip="Where the stay is: on hold or awaiting online payment, confirmed, checked in, checked out, cancelled, no-show or expired (an unpaid hold that lapsed).">STATUS</th>
-            <th data-tip="What you can do now: record a payment, check in, cancel, mark a no-show or check out. Only actions your role allows are shown.">ACTION</th>
+            <th data-tip="What you can do now: check in, check out (with an incident report), record a payment, cancel or mark a no-show. Only actions your role allows are shown.">ACTION</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const { next_statuses: nextStatuses, record_payment: canPay } = row.actions;
-            const menu = nextStatuses.filter((status) => status !== "checked_out");
+            const menu = nextStatuses.filter((status) => status === "cancelled" || status === "no_show");
             return (
               <tr key={row.id} className={onOpen ? "row-link" : undefined} onClick={() => onOpen?.(row)}>
                 <td>
@@ -569,6 +743,11 @@ export function ReservationTable({
                 <td>{row.room_number ? `${row.room_type} · ${row.room_number}` : row.room_type}</td>
                 <td>
                   {dateLabel(row.check_in)} — {dateLabel(row.check_out)}
+                  {departureFlag(row) && (
+                    <div>
+                      <DepartureFlag reservation={row} />
+                    </div>
+                  )}
                 </td>
                 <td className="booking-amount">{money(row.amount_kobo)}</td>
                 <td>
@@ -576,6 +755,16 @@ export function ReservationTable({
                 </td>
                 <td onClick={(event) => event.stopPropagation()}>
                   <div className="reservation-actions">
+                    {nextStatuses.includes("checked_in") && (
+                      <button className="stay-button" onClick={() => onStatus(row, "checked_in")}>
+                        Check in
+                      </button>
+                    )}
+                    {nextStatuses.includes("checked_out") && (
+                      <button className="stay-button" onClick={() => onStatus(row, "checked_out")}>
+                        Check out
+                      </button>
+                    )}
                     {canPay && (
                       <button className="text-link" onClick={() => onPay(row)}>
                         Record payment
@@ -583,18 +772,13 @@ export function ReservationTable({
                     )}
                     {menu.length > 0 && (
                       <select className="inline-select" value="" onChange={(event) => event.target.value && onStatus(row, event.target.value as ReservationStatus)} aria-label={`Update ${row.reference}`}>
-                        <option value="">Stay action</option>
+                        <option value="">More</option>
                         {menu.map((status) => (
                           <option key={status} value={status}>
                             {optionLabel(reference.reservationStatuses, status)}
                           </option>
                         ))}
                       </select>
-                    )}
-                    {nextStatuses.includes("checked_out") && (
-                      <button className="text-link" onClick={() => onStatus(row, "checked_out")}>
-                        Check out
-                      </button>
                     )}
                     {!canPay && nextStatuses.length === 0 && <span className="quiet-action">—</span>}
                   </div>
@@ -678,17 +862,34 @@ export function NewReservationModal({ notify, onClose, onCreated }: { notify: No
   );
 }
 
+const STAY_TABS: ReadonlyArray<{ view: StayView | null; label: string; tip: string }> = [
+  { view: null, label: "All", tip: "Every booking, newest check-in first." },
+  { view: "arrivals", label: "Arrivals", tip: "Confirmed guests due to check in today, including late arrivals whose stay hasn't ended." },
+  { view: "in_house", label: "In house", tip: "Guests checked in right now." },
+  { view: "departing", label: "Due out", tip: "Checked-in guests due to check out today or tomorrow." },
+  { view: "overstay", label: "Overstays", tip: "Checked-in guests whose check-out date has passed. Check them out, or extend the stay with Edit." },
+];
+
+/** `intent: "stay:<view>"` opens Reservations on a front-desk view. */
+export const stayIntent = (view: StayView) => `stay:${view}`;
+
 export function ReservationsSection({ notify, refreshKey, can, reference, focus }: SectionProps) {
   const [search, setSearch] = useState(focus?.query ?? "");
   const [query, setQuery] = useState(focus?.query ?? "");
+  const [stay, setStay] = useState<StayView | null>(() => STAY_TABS.find((tab) => tab.view && focus?.intent === stayIntent(tab.view))?.view ?? null);
   const [creating, setCreating] = useState(focus?.intent === "create");
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), 350);
     return () => window.clearTimeout(timer);
   }, [search]);
-  const reservations = useResource(() => api.reservations.list({ q: query || undefined }), `${refreshKey}:${query}`);
+  const reservations = useResource(() => api.reservations.list({ q: query || undefined, stay: stay ?? undefined }), `${refreshKey}:${query}:${stay}`);
+  const summary = useResource<StaySummary>(() => api.reservations.staySummary(), String(refreshKey));
   const rows = reservations.data ?? [];
-  const actions = useReservationActions(notify, () => void reservations.reload(), reference, rows, focus?.id ?? null);
+  const reload = () => {
+    void reservations.reload();
+    void summary.reload();
+  };
+  const actions = useReservationActions(notify, reload, reference, rows, focus?.id ?? null);
 
   return (
     <>
@@ -711,8 +912,13 @@ export function ReservationsSection({ notify, refreshKey, can, reference, focus 
           </div>
         </div>
         <div className="booking-toolbar">
-          <div className="booking-tabs">
-            <span className="active">{query ? `Matching “${query}”` : "Most recent"}</span>
+          <div className="booking-tabs" role="tablist" aria-label="Front-desk views">
+            {STAY_TABS.map((tab) => (
+              <button key={tab.label} role="tab" aria-selected={stay === tab.view} className={[stay === tab.view && "active", tab.view === "overstay" && summary.data?.overstay && "tab-alert"].filter(Boolean).join(" ")} onClick={() => setStay(tab.view)} data-tip={tab.tip} data-tip-pos="bottom">
+                {tab.label}
+                {tab.view && summary.data ? <span>{summary.data[tab.view]}</span> : null}
+              </button>
+            ))}
           </div>
           <div className="booking-tools">
             <div className="table-search">
@@ -731,7 +937,7 @@ export function ReservationsSection({ notify, refreshKey, can, reference, focus 
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
-            void reservations.reload();
+            reload();
           }}
         />
       )}

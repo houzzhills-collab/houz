@@ -11,6 +11,7 @@ import {
   ListReservationsSchema,
   RecordPaymentSchema,
   ReservationPaymentsSchema,
+  StaySummarySchema,
   UpdateIdentitySchema,
   UpdateReservationDetailsSchema,
   UpdateReservationSchema,
@@ -24,6 +25,7 @@ import {
   listReservations,
   loadGuestIdentityImage,
   recordStaffPayment,
+  staySummary,
   updateGuestIdentity,
   updateReservationDetails,
   type GuestIdentityInput,
@@ -38,6 +40,8 @@ const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
     const query = request.query;
     return listReservations(app, requirePrincipal(request), { ...query, limit: query.limit ?? 50 });
   });
+
+  app.get("/stay-summary", { schema: StaySummarySchema, preHandler: app.authorize("reservations:read") }, async (request) => staySummary(app, requirePrincipal(request)));
 
   app.post("/", { schema: CreateReservationSchema, preHandler: app.authorize("reservations:write") }, async (request, reply) => {
     const body = request.body;
@@ -55,7 +59,7 @@ const reservationRoutes: FastifyPluginAsyncTypebox = async (app) => {
   });
 
   app.patch("/:id", { schema: UpdateReservationSchema, preHandler: app.authorize("reservations:write") }, async (request) =>
-    changeReservationStatus(app, requirePrincipal(request), request.params.id, request.body.status, request.body.reason),
+    changeReservationStatus(app, requirePrincipal(request), request.params.id, request.body.status, request.body.reason, request.body.incidents),
   );
 
   app.patch("/:id/details", { schema: UpdateReservationDetailsSchema, preHandler: app.authorize("reservations:write") }, async (request) =>

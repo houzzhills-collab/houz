@@ -11,7 +11,7 @@ import { alertTransferPending, notifyGuestPayment, notifyGuestStay } from "../em
 import { confirmHeldStayIfPaid, expireLapsedHolds, refreshReservationPayment } from "../payments/ledger.js";
 import { OCCUPYING_STAY_SQL, assertMinimumStay, insertGuest, staffReference, validateStay } from "../public/booking.service.js";
 import { detectImageType } from "../apartments/images.js";
-import type { GUEST_ID_SIDES, GUEST_ID_TYPES } from "./reservations.schemas.js";
+import type { GUEST_ID_SIDES, GUEST_ID_TYPES, INCIDENT_CATEGORIES, STAY_VIEWS } from "./reservations.schemas.js";
 
 export type ReservationRow = {
   id: string;
@@ -27,6 +27,8 @@ export type ReservationRow = {
   guests_count: number;
   amount_kobo: string;
   paid_kobo: string;
+  charges_kobo: string;
+  incidents: Array<{ id: string; category: IncidentCategory; description: string | null; charge_kobo: string; recorded_by: string | null; created_at: string }>;
   status: string;
   payment_status: string;
   source: string;
@@ -40,7 +42,7 @@ export type ReservationRow = {
 export const RESERVATION_SELECT = `
   SELECT r.id, r.reference, g.full_name AS guest_name, g.email, g.phone, r.room_id, coalesce(ro.room_type, r.room_type) AS room_type,
          ro.room_number, r.check_in::text, r.check_out::text, r.guests_count, r.amount_kobo::text,
-         coalesce(paid.total, 0)::text AS paid_kobo, r.status, r.payment_status, r.source, r.notes, r.created_at,
+         coalesce(paid.total, 0)::text AS paid_kobo, r.extra_charges_kobo::text AS charges_kobo, coalesce(inc.list, '[]'::json) AS incidents, r.status, r.payment_status, r.source, r.notes, r.created_at,
          CASE WHEN gid.guest_id IS NOT NULL THEN json_build_object(
            'id_type', gid.id_type, 'id_number', gid.id_number, 'updated_at', gid.updated_at,
            'front', EXISTS (SELECT 1 FROM guest_identity_images gi WHERE gi.guest_id = gid.guest_id AND gi.side = 'front'),
@@ -50,9 +52,29 @@ export const RESERVATION_SELECT = `
     JOIN guests g ON g.id = r.guest_id
     LEFT JOIN guest_identity_documents gid ON gid.guest_id = r.guest_id
     LEFT JOIN rooms ro ON ro.id = r.room_id
-    LEFT JOIN LATERAL (SELECT sum(p.amount_kobo) AS total FROM payments p WHERE p.reservation_id = r.id AND p.status = 'settled') paid ON true`;
+    LEFT JOIN LATERAL (SELECT sum(p.amount_kobo) AS total FROM payments p WHERE p.reservation_id = r.id AND p.status = 'settled') paid ON true
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object('id', i.id, 'category', i.category, 'description', i.description, 'charge_kobo', i.charge_kobo::text,
+                                        'recorded_by', u.full_name, 'created_at', i.created_at) ORDER BY i.created_at, i.id) AS list
+        FROM reservation_incidents i LEFT JOIN users u ON u.id = i.created_by WHERE i.reservation_id = r.id) inc ON true`;
 
 const MAX_RANGE_DAYS = 366;
+
+type StayView = (typeof STAY_VIEWS)[number];
+
+/** Front-desk views of reservation `r` relative to `today` (a SQL date expression). */
+function staySql(view: StayView, today: string): string {
+  switch (view) {
+    case "arrivals":
+      return `r.status = 'confirmed' AND r.check_in <= ${today} AND r.check_out > ${today}`;
+    case "in_house":
+      return `r.status = 'checked_in'`;
+    case "departing":
+      return `r.status = 'checked_in' AND r.check_out BETWEEN ${today} AND ${today} + 1`;
+    case "overstay":
+      return `r.status = 'checked_in' AND r.check_out < ${today}`;
+  }
+}
 
 /** Adds the caller-specific actions every client renders instead of re-deriving the rules. */
 export function withActions<T extends { status: string; payment_status: string; check_in: string }>(rows: T[], role: Role) {
@@ -62,7 +84,7 @@ export function withActions<T extends { status: string; payment_status: string; 
     ...row,
     actions: {
       next_statuses: writer ? (TRANSITIONS[row.status] ?? []).filter((next) => !((next === "checked_in" || next === "no_show") && row.check_in > today)) : [],
-      record_payment: writer && !CLOSED_STAYS.has(row.status) && (row.payment_status === "unpaid" || row.payment_status === "part_paid"),
+      record_payment: writer && acceptsPayment(row.status) && (row.payment_status === "unpaid" || row.payment_status === "part_paid"),
       edit: writer ? editScope(row.status) : ("none" as const),
       identity: writer,
     },
@@ -87,13 +109,14 @@ function likePattern(term: string): string {
 export async function listReservations(
   app: FastifyInstance,
   principal: Principal,
-  filters: { status?: string[]; from?: string; to?: string; q?: string; limit: number; cursor?: string },
+  filters: { status?: string[]; stay?: StayView; from?: string; to?: string; q?: string; limit: number; cursor?: string },
 ) {
   if (filters.from && filters.to) {
     const span = nightsBetween(filters.from, filters.to);
     if (span < 1 || span > MAX_RANGE_DAYS) throw Errors.unprocessable(`"to" must be after "from" and at most ${MAX_RANGE_DAYS} days later`, "INVALID_RANGE");
   }
   const cursor = decodeCursor(filters.cursor, 3);
+  const stay = filters.stay ? staySql(filters.stay, "$10::date") : null;
   const rows = await withConnection(app.db, (sql) =>
     sql.rows<ReservationRow>(
       `${RESERVATION_SELECT}
@@ -103,6 +126,7 @@ export async function listReservations(
           AND ($4::date IS NULL OR r.check_in < $4::date)
           AND ($5::text IS NULL OR g.full_name ILIKE $5 ESCAPE '\\' OR r.reference ILIKE $5 ESCAPE '\\')
           AND ($6::date IS NULL OR (r.check_in, r.created_at, r.id) < ($6::date, $7::timestamptz, $8::uuid))
+          ${stay ? `AND ${stay}` : ""}
         ORDER BY r.check_in DESC, r.created_at DESC, r.id DESC
         LIMIT $9`,
       [
@@ -115,11 +139,30 @@ export async function listReservations(
         cursor?.[1] ?? null,
         cursor?.[2] ?? null,
         filters.limit + 1,
+        // Only bound when the view uses it: PostgreSQL rejects parameters it cannot type.
+        ...(stay?.includes("$10") ? [businessToday()] : []),
       ],
     ),
   );
   const page = toPage(rows, filters.limit, (row) => [row.check_in, row.cursor_created, row.id]);
   return { reservations: withActions(page.items, principal.role), nextCursor: page.nextCursor };
+}
+
+/** Counts for each front-desk view, so every screen can flag arrivals, departures and overstays. */
+export async function staySummary(app: FastifyInstance, principal: Principal) {
+  const today = businessToday();
+  const counts = await withConnection(app.db, (sql) =>
+    sql.one<Record<StayView, number>>(
+      `SELECT count(*) FILTER (WHERE ${staySql("arrivals", "$2::date")})::int AS arrivals,
+              count(*) FILTER (WHERE ${staySql("in_house", "$2::date")})::int AS in_house,
+              count(*) FILTER (WHERE ${staySql("departing", "$2::date")})::int AS departing,
+              count(*) FILTER (WHERE ${staySql("overstay", "$2::date")})::int AS overstay
+         FROM reservations r
+        WHERE r.property_id = $1 AND r.status IN ('confirmed', 'checked_in')`,
+      [principal.propertyId, today],
+    ),
+  );
+  return { ...counts, today };
 }
 
 export async function getReservation(sql: Sql, principal: Principal, id: string) {
@@ -177,6 +220,8 @@ export async function createStaffReservation(
 }
 
 type NextStatus = "checked_in" | "checked_out" | "cancelled" | "no_show";
+type IncidentCategory = (typeof INCIDENT_CATEGORIES)[number];
+export type IncidentInput = { category: IncidentCategory; description?: string; chargeKobo?: number };
 
 const GUEST_STATUS_EMAIL = {
   checked_in: "guest.checked_in",
@@ -191,9 +236,22 @@ const TRANSITIONS: Readonly<Record<string, readonly NextStatus[]>> = {
   pending_payment: ["cancelled"],
 };
 
-export async function changeReservationStatus(app: FastifyInstance, principal: Principal, id: string, next: NextStatus, reasonInput: string | undefined) {
+export async function changeReservationStatus(
+  app: FastifyInstance,
+  principal: Principal,
+  id: string,
+  next: NextStatus,
+  reasonInput: string | undefined,
+  incidentInput: IncidentInput[] = [],
+) {
   const reason = reasonInput?.trim() ?? "";
   if ((next === "cancelled" || next === "no_show") && reason.length < 3) throw Errors.unprocessable("Give a reason for this change", "REASON_REQUIRED");
+  if (incidentInput.length > 0 && next !== "checked_out") throw Errors.unprocessable("Incidents are reported at check-out", "VALIDATION_FAILED");
+  const incidents = incidentInput.map((incident) => ({ category: incident.category, description: optionalTextOf(incident.description ?? null), chargeKobo: BigInt(incident.chargeKobo ?? 0) }));
+  if (incidents.some((incident) => incident.category === "other" && !incident.description)) {
+    throw Errors.unprocessable("Describe the violation for incidents marked “Other”", "INCIDENT_DESCRIPTION_REQUIRED");
+  }
+  const charges = incidents.reduce((sum, incident) => sum + incident.chargeKobo, 0n);
   return withTransaction(app.db, async (tx) => {
     const reservation = await tx.maybeOne<{ status: string; room_id: string | null; reference: string; check_in: string }>(
       `SELECT status, room_id, reference, check_in::text FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`,
@@ -232,6 +290,28 @@ export async function changeReservationStatus(app: FastifyInstance, principal: P
         outbox: { reference: `Room ${room.room_number}` },
       });
     }
+    if (incidents.length > 0) {
+      for (const incident of incidents) {
+        await tx.exec(
+          // clock_timestamp() keeps the reported order; now() is the same for the whole transaction.
+          `INSERT INTO reservation_incidents(property_id, reservation_id, category, description, charge_kobo, created_by, created_at) VALUES ($1, $2, $3, $4, $5, $6, clock_timestamp())`,
+          [principal.propertyId, id, incident.category, incident.description, incident.chargeKobo.toString(), principal.userId],
+        );
+      }
+      if (charges > 0n) {
+        await tx.exec(`UPDATE reservations SET extra_charges_kobo = extra_charges_kobo + $2 WHERE id = $1`, [id, charges.toString()]);
+        await refreshReservationPayment(tx, id);
+      }
+      await recordEvent(tx, {
+        propertyId: principal.propertyId,
+        actorId: principal.userId,
+        action: "reservation.incidents_reported",
+        entityType: "reservation",
+        entityId: id,
+        details: { categories: incidents.map((incident) => incident.category), chargesKobo: charges.toString() },
+        outbox: { type: "reservation.updated", reference: reservation.reference },
+      });
+    }
     if (next === "cancelled") {
       // Unfinished online checkouts end; pending bank transfers stay for owner verification (no refunds).
       await tx.exec(`UPDATE payments SET status = 'failed' WHERE reservation_id = $1 AND method = 'online' AND status = 'pending'`, [id]);
@@ -253,6 +333,11 @@ export async function changeReservationStatus(app: FastifyInstance, principal: P
 
 const CLOSED_STAYS = new Set(["cancelled", "checked_out", "no_show", "expired"]);
 
+/** Open stays take payments; so does a checked-out stay, for a balance or incident charges left on departure. */
+function acceptsPayment(status: string): boolean {
+  return !CLOSED_STAYS.has(status) || status === "checked_out";
+}
+
 /** Staff-recorded payment (PRD §4.2). Settled for cash/POS, pending for bank transfer. */
 export async function recordStaffPayment(
   app: FastifyInstance,
@@ -264,7 +349,7 @@ export async function recordStaffPayment(
   const key = `staff:${input.idempotencyKey}`;
   return withTransaction(app.db, async (tx) => {
     const reservation = await tx.maybeOne<{ amount_kobo: string; status: string; reference: string }>(
-      `SELECT amount_kobo::text, status, reference FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+      `SELECT (amount_kobo + extra_charges_kobo)::text AS amount_kobo, status, reference FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`,
       [reservationId, principal.propertyId],
     );
     if (!reservation) throw Errors.notFound("Reservation not found");
@@ -280,7 +365,7 @@ export async function recordStaffPayment(
       const state = await tx.one<{ payment_status: string }>(`SELECT payment_status FROM reservations WHERE id = $1`, [reservationId]);
       return { created: false, payment: { id: prior.id, duplicate: true, paid: state.payment_status === "paid", paymentStatus: prior.status } };
     }
-    if (CLOSED_STAYS.has(reservation.status)) throw Errors.conflict("Cannot add a payment to a closed stay", "STAY_CLOSED");
+    if (!acceptsPayment(reservation.status)) throw Errors.conflict("Cannot add a payment to a closed stay", "STAY_CLOSED");
 
     const totals = await tx.one<{ committed: string }>(
       // Settled money plus pending staff transfers; unfinished online checkouts do not count.

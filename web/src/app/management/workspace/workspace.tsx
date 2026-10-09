@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, BedDouble, ChartColumn, Building2, CalendarDays, Check, Clock3, Coffee, CreditCard, HelpCircle, KeyRound, LayoutDashboard, LogOut, Menu, Search, Settings2, Users, Utensils, X } from "lucide-react";
-import { api, errorMessage, type Permission, type Property, type Reference, type User } from "@/lib/api";
+import { api, errorMessage, type Permission, type Property, type Reference, type StaySummary, type User } from "@/lib/api";
 import { applyProperty, initials, longDateLabel, optionLabel, propertyHour, text } from "./format";
 import { CommandPalette, Tour, tourSeen, type Focus, type PaletteAction, type TourStep } from "./assist";
 import { Field, Modal, useAction, type SectionProps } from "./ui";
@@ -150,6 +150,24 @@ function tourSteps(firstName: string): TourStep[] {
   ];
 }
 
+/** Overstays (red) and guests due out today or tomorrow (gold), beside Reservations in the sidebar. */
+function StayBadges({ stays }: { stays: StaySummary }) {
+  return (
+    <span className="nav-badges">
+      {stays.overstay > 0 && (
+        <i className="nav-badge is-alert" title={`${stays.overstay} overstay${stays.overstay === 1 ? "" : "s"}`}>
+          {stays.overstay}
+        </i>
+      )}
+      {stays.departing > 0 && (
+        <i className="nav-badge" title={`${stays.departing} due out today or tomorrow`}>
+          {stays.departing}
+        </i>
+      )}
+    </span>
+  );
+}
+
 export function Workspace({ page }: { page?: WorkspacePage } = {}) {
   const router = useRouter();
   // Stable values: `page` itself is a new object on every render.
@@ -170,6 +188,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
   const [focus, setFocus] = useState<Focus | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [touring, setTouring] = useState(false);
+  const [stays, setStays] = useState<StaySummary | null>(null);
 
   const notify = useCallback((message: string) => {
     setNotice(message);
@@ -269,6 +288,20 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
       stop();
     };
   }, [user]);
+
+  // Front-desk counts for the sidebar, refreshed with every live update.
+  const readsReservations = Boolean(user && !user.mustChangePassword && user.permissions.includes("reservations:read"));
+  useEffect(() => {
+    if (!readsReservations) return;
+    let cancelled = false;
+    api.reservations.staySummary().then(
+      (summary) => !cancelled && setStays(summary),
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [readsReservations, refreshKey]);
 
   const signOut = async () => {
     await api.auth.logout().catch(() => undefined);
@@ -379,6 +412,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
             >
               <Icon size={17} strokeWidth={1.8} />
               <span>{label}</span>
+              {label === "Reservations" && readsReservations && stays && <StayBadges stays={stays} />}
             </button>
           ))}
         </nav>
@@ -466,7 +500,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
             </div>
           </div>
           {page && (user.permissions.includes(page.permission) ? page.render(sectionProps) : <div className="empty-state">You don&apos;t have access to this page.</div>)}
-          {!page && current?.label === "Overview" && <OverviewSection {...sectionProps} onOpen={(section) => go({ section })} />}
+          {!page && current?.label === "Overview" && <OverviewSection {...sectionProps} onOpen={(section, intent) => go({ section, intent })} />}
           {!page && current?.label === "Reports" && <ReportsSection key={sectionKey} {...sectionProps} />}
           {!page && current?.label === "Reservations" && <ReservationsSection key={sectionKey} {...sectionProps} />}
           {!page && current?.label === "Payments" && <PaymentsSection key={sectionKey} {...sectionProps} />}
