@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import { errorMessage, type Permission, type Property, type Reference, type User } from "@/lib/api";
 import type { Focus } from "./assist";
 
@@ -22,10 +22,23 @@ export type SectionProps = {
   focus?: Focus | null;
 };
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+/** An info icon that explains the thing next to it on hover or keyboard focus. */
+export function Tip({ text }: { text: string }) {
+  return (
+    <span className="tip-icon" tabIndex={0} role="img" aria-label={text} data-tip={text}>
+      <Info size={13} />
+    </span>
+  );
+}
+
+/** A form field. `tip` explains what the field means; `hint` is a short note shown under it. */
+export function Field({ label, children, hint, tip }: { label: string; children: ReactNode; hint?: string; tip?: string }) {
   return (
     <label className="form-field">
-      <span>{label}</span>
+      <span className="field-label" data-tip={tip}>
+        {label}
+        {tip && <Info className="field-label-icon" size={13} aria-hidden />}
+      </span>
       {children}
       {hint && <small className="field-hint">{hint}</small>}
     </label>
@@ -50,11 +63,13 @@ export function InlineError({ message, onDismiss }: { message: string; onDismiss
   );
 }
 
-export function Metric({ label, icon, tone, value, unit, foot, progress }: { label: string; icon: ReactNode; tone: string; value: string; unit?: string; foot: string; progress?: number }) {
+export function Metric({ label, icon, tone, value, unit, foot, progress, tip }: { label: string; icon: ReactNode; tone: string; value: string; unit?: string; foot: string; progress?: number; tip?: string }) {
   return (
     <article className="metric-card">
       <div className="metric-top">
-        <span>{label}</span>
+        <span className="metric-label" data-tip={tip}>
+          {label}
+        </span>
         <span className={`metric-icon ${tone}`}>{icon}</span>
       </div>
       <div className="metric-value metric-text-value">
@@ -181,16 +196,22 @@ export function Drawer({
 }
 
 /** A titled group of label/value rows inside a drawer. Empty values are skipped. */
-export function DetailList({ title, rows }: { title?: string; rows: ReadonlyArray<readonly [label: string, value: ReactNode]> }) {
+/** Label/value rows; an optional third element explains the label on hover. */
+export function DetailList({ title, tip, rows }: { title?: string; tip?: string; rows: ReadonlyArray<readonly [label: string, value: ReactNode, tip?: string]> }) {
   const shown = rows.filter(([, value]) => value !== null && value !== undefined && value !== "");
   if (shown.length === 0) return null;
   return (
     <section className="detail-section">
-      {title && <h3>{title}</h3>}
+      {title && (
+        <h3>
+          {title}
+          {tip && <Tip text={tip} />}
+        </h3>
+      )}
       <dl className="detail-list">
-        {shown.map(([label, value]) => (
+        {shown.map(([label, value, rowTip]) => (
           <div key={label}>
-            <dt>{label}</dt>
+            <dt data-tip={rowTip}>{label}</dt>
             <dd>{value}</dd>
           </div>
         ))}

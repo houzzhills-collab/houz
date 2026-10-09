@@ -62,6 +62,7 @@ export type Reference = {
   stockMovements: Option[];
   paymentProviders: Option[];
   exceptionKinds: Option[];
+  guestIdTypes: Option[];
 };
 
 export type RoomStatus = "vacant_clean" | "vacant_dirty" | "occupied" | "inspected" | "maintenance" | "out_of_order";
@@ -101,12 +102,21 @@ export type Reservation = {
   source?: string;
   notes?: string | null;
   created_at?: string;
+  /** The guest's government-issued ID; `front`/`back` say whether a photo of that side is on file. */
+  guest_id_document?: GuestIdDocument | null;
   /**
    * What the signed-in user may do now, decided by the API. `edit`: everything,
    * guest details and check-out (in-house), guest details only, or nothing.
+   * `identity`: may record or change the guest's ID.
    */
-  actions: { next_statuses: ReservationStatus[]; record_payment: boolean; edit?: "full" | "stay_end" | "contact" | "none" };
+  actions: { next_statuses: ReservationStatus[]; record_payment: boolean; edit?: "full" | "stay_end" | "contact" | "none"; identity?: boolean };
 };
+
+export type GuestIdType = "national_id" | "passport" | "drivers_license" | "voters_card" | "other";
+export type GuestIdSide = "front" | "back";
+export type GuestIdDocument = { id_type: GuestIdType; id_number: string; front: boolean; back: boolean; updated_at: string };
+/** A new photo replaces that side; `remove` deletes it; absent leaves it as is. */
+export type GuestIdInput = { idType: GuestIdType; idNumber: string; front?: File | "remove"; back?: File | "remove" };
 
 export type PaymentSource = "accommodation" | "restaurant";
 export type PaymentStatus = "pending" | "settled" | "failed";
@@ -388,7 +398,8 @@ export type PublicApartmentDetail = { apartment: PublicApartment; bookedRanges: 
 // ---- Workspace edits ----
 
 export type RoomChanges = Partial<{ roomNumber: string; roomType: string; nightlyRateKobo: number; capacity: number; active: boolean }>;
-export type InventoryItemChanges = Partial<{ name: string; sku: string | null; unit: string; reorderLevel: number; costKobo: number; active: boolean }>;
+/** `quantity` is the counted stock on hand; a change is recorded as an adjustment movement and needs `quantityReason`. */
+export type InventoryItemChanges = Partial<{ name: string; sku: string | null; unit: string; reorderLevel: number; costKobo: number; active: boolean; quantity: number; quantityReason: string }>;
 export type StaffProfileChanges = Partial<{
   fullName: string;
   role: Role;

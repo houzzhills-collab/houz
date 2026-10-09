@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Activity, ArrowDownRight, BedDouble, Check, CircleDollarSign, Clock3, Plus, ShieldCheck, Users, Utensils } from "lucide-react";
 import { api, type Dashboard } from "@/lib/api";
 import { humanize, money, timeLabel } from "../format";
-import { Empty, InlineError, Metric, useResource, type SectionProps } from "../ui";
+import { Empty, InlineError, Metric, Tip, useResource, type SectionProps } from "../ui";
 import { NewReservationModal, ReservationTable, useReservationActions } from "./reservations";
 
 export function OverviewSection({ notify, refreshKey, can, reference, property, onOpen }: SectionProps & { onOpen: (section: string) => void }) {
@@ -28,8 +28,12 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         </div>
       )}
       <section className="metric-grid" aria-label="Property performance">
-        <Metric label="Occupancy" icon={<BedDouble size={17} />} tone="lavender" value={String(sellable ? Math.round((occupied / sellable) * 100) : 0)} unit="%" foot={`${occupied} of ${sellable} rooms`} progress={sellable ? (occupied / sellable) * 100 : 0} />
-        <Metric label="Arrivals today" icon={<ArrowDownRight size={17} />} tone="peach" value={String(metrics.arrivals ?? 0)} foot={`${metrics.departures ?? 0} departures today`} />
+        <Metric label="Occupancy" icon={<BedDouble size={17} />} tone="lavender" value={String(sellable ? Math.round((occupied / sellable) * 100) : 0)} unit="%" foot={`${occupied} of ${sellable} rooms`} progress={sellable ? (occupied / sellable) * 100 : 0}
+          tip="Share of rooms in service that are occupied right now. Rooms under maintenance or out of order aren't counted."
+        />
+        <Metric label="Arrivals today" icon={<ArrowDownRight size={17} />} tone="peach" value={String(metrics.arrivals ?? 0)} foot={`${metrics.departures ?? 0} departures today`}
+          tip="Guests due to check in today. Departures are guests due to check out today."
+        />
         {showMoney && (
           <>
             <Metric
@@ -38,8 +42,11 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
               tone="mint"
               value={money(BigInt(String(metrics.room_revenue_kobo ?? "0")) + BigInt(String(metrics.restaurant_revenue_kobo ?? "0")))}
               foot="Settled room + restaurant payments"
+              tip="Money confirmed today from room bookings and the restaurant. Bank transfers awaiting confirmation and failed online payments aren't included."
             />
-            <Metric label="Restaurant sales" icon={<Utensils size={17} />} tone="butter" value={money(String(metrics.restaurant_revenue_kobo ?? "0"))} foot={`${metrics.restaurant_orders ?? 0} paid orders today`} />
+            <Metric label="Restaurant sales" icon={<Utensils size={17} />} tone="butter" value={money(String(metrics.restaurant_revenue_kobo ?? "0"))} foot={`${metrics.restaurant_orders ?? 0} paid orders today`}
+              tip="Restaurant takings settled today, and how many paid orders they came from."
+            />
           </>
         )}
       </section>
@@ -48,24 +55,27 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         <article className="panel revenue-panel">
           <div className="panel-heading">
             <div>
-              <h2>Operations</h2>
+              <h2>
+                Operations
+                <Tip text="A live snapshot of the property: rooms that can be sold, staff on shift, rooms out of service and stock running low." />
+              </h2>
               <p>Committed activity across the property</p>
             </div>
           </div>
           <div className="live-kpi-row">
-            <div>
+            <div data-tip="Active rooms that can be sold tonight, i.e. not under maintenance or out of order.">
               <small>Rooms in service</small>
               <strong>{sellable}</strong>
             </div>
-            <div>
+            <div data-tip="Staff who have clocked in and not yet clocked out.">
               <small>Staff clocked in</small>
               <strong>{data?.staff.clocked_in ?? 0}</strong>
             </div>
-            <div>
+            <div data-tip="Rooms marked under maintenance or out of order. They can't be booked until restored.">
               <small>Out of service</small>
               <strong>{metrics.maintenance_rooms ?? 0}</strong>
             </div>
-            <div>
+            <div data-tip="Stock items at or below their reorder level. See Inventory.">
               <small>Low stock alerts</small>
               <strong>{metrics.low_stock_items ?? 0}</strong>
             </div>
@@ -86,7 +96,10 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         <article className="panel activity-panel">
           <div className="panel-heading">
             <div>
-              <h2>Recent activity</h2>
+              <h2>
+                Recent activity
+                <Tip text="The latest saved changes across the property: bookings, payments, room status, stock and staff. Updates live." />
+              </h2>
               <p>Latest committed changes</p>
             </div>
           </div>
@@ -113,7 +126,10 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         <section className="panel bookings-panel">
           <div className="panel-heading bookings-heading">
             <div>
-              <h2>Arrivals and in-house stays</h2>
+              <h2>
+                Arrivals and in-house stays
+                <Tip text="Guests arriving from today through the next three days, plus guests currently checked in. Select one to manage the stay." />
+              </h2>
               <p>
                 Stays from today through the next three days <span className="booking-count">{data?.reservations.length ?? 0}</span>
               </p>
@@ -130,13 +146,16 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         <article className="panel operations-panel">
           <div className="panel-heading">
             <div>
-              <h2>Today at a glance</h2>
+              <h2>
+                Today at a glance
+                <Tip text="Today's housekeeping progress and staffing." />
+              </h2>
               <p>Key operational checkpoints</p>
             </div>
             <Clock3 size={18} className="faint-icon" />
           </div>
           <div className="ops-stats">
-            <div>
+            <div data-tip="Room cleaning and turnover tasks finished today.">
               <span className="ops-icon mint">
                 <Check size={16} />
               </span>
@@ -145,7 +164,7 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
                 <small>Housekeeping completed</small>
               </div>
             </div>
-            <div>
+            <div data-tip="Staff clocked in now, out of all active staff.">
               <span className="ops-icon peach">
                 <Users size={16} />
               </span>
@@ -156,7 +175,7 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
                 <small>Staff clocked in</small>
               </div>
             </div>
-            <div>
+            <div data-tip="Housekeeping tasks still to do, e.g. rooms waiting to be cleaned after check-out.">
               <span className="ops-icon lavender">
                 <BedDouble size={16} />
               </span>
@@ -170,7 +189,10 @@ export function OverviewSection({ notify, refreshKey, can, reference, property, 
         <article className="panel shift-panel">
           <div className="panel-heading">
             <div>
-              <h2>Property</h2>
+              <h2>
+                Property
+                <Tip text="The property this workspace manages and its time zone. Dates such as “today” and check-in days follow this time zone." />
+              </h2>
               <p>{data?.property.timezone ?? property.timezone}</p>
             </div>
           </div>

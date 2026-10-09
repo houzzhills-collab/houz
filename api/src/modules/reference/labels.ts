@@ -29,6 +29,14 @@ export const RESERVATION_STATUS_LABELS = {
 
 export const PAYMENT_STATUS_LABELS = { unpaid: "Unpaid", pending: "Pending confirmation", part_paid: "Part paid", paid: "Paid" } as const;
 
+export const GUEST_ID_TYPE_LABELS = {
+  national_id: "National ID (NIN)",
+  passport: "International passport",
+  drivers_license: "Driver's licence",
+  voters_card: "Voter's card",
+  other: "Other government ID",
+} as const;
+
 export const EXCEPTION_TITLES: Record<string, string> = {
   late_success: "Paid after the hold expired",
   amount_mismatch: "Amount does not match",
@@ -51,4 +59,5 @@ export const REFERENCE = {
   stockMovements: options({ receive: "Receive stock", adjust: "Count adjustment (+/−)", wastage: "Record wastage" }),
   paymentProviders: options({ none: "Off (no online payment)", paystack: "Paystack", flutterwave: "Flutterwave" }),
   exceptionKinds: options(EXCEPTION_TITLES),
+  guestIdTypes: options(GUEST_ID_TYPE_LABELS),
 };

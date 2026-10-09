@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { withConnection, withTransaction, type Sql } from "../../db/sql.js";
 import { businessToday, nightsBetween } from "../../lib/dates.js";
@@ -9,6 +10,8 @@ import type { Principal } from "../auth/session.service.js";
 import { alertTransferPending, notifyGuestPayment, notifyGuestStay } from "../email/notifications.js";
 import { confirmHeldStayIfPaid, expireLapsedHolds, refreshReservationPayment } from "../payments/ledger.js";
 import { OCCUPYING_STAY_SQL, assertMinimumStay, insertGuest, staffReference, validateStay } from "../public/booking.service.js";
+import { detectImageType } from "../apartments/images.js";
+import type { GUEST_ID_SIDES, GUEST_ID_TYPES } from "./reservations.schemas.js";
 
 export type ReservationRow = {
   id: string;
@@ -29,6 +32,7 @@ export type ReservationRow = {
   source: string;
   notes: string | null;
   created_at: Date;
+  guest_id_document: { id_type: GuestIdType; id_number: string; front: boolean; back: boolean; updated_at: string } | null;
   cursor_created: string;
 };
 
@@ -36,9 +40,15 @@ export type ReservationRow = {
 export const RESERVATION_SELECT = `
   SELECT r.id, r.reference, g.full_name AS guest_name, g.email, g.phone, r.room_id, coalesce(ro.room_type, r.room_type) AS room_type,
          ro.room_number, r.check_in::text, r.check_out::text, r.guests_count, r.amount_kobo::text,
-         coalesce(paid.total, 0)::text AS paid_kobo, r.status, r.payment_status, r.source, r.notes, r.created_at, r.created_at::text AS cursor_created
+         coalesce(paid.total, 0)::text AS paid_kobo, r.status, r.payment_status, r.source, r.notes, r.created_at,
+         CASE WHEN gid.guest_id IS NOT NULL THEN json_build_object(
+           'id_type', gid.id_type, 'id_number', gid.id_number, 'updated_at', gid.updated_at,
+           'front', EXISTS (SELECT 1 FROM guest_identity_images gi WHERE gi.guest_id = gid.guest_id AND gi.side = 'front'),
+           'back', EXISTS (SELECT 1 FROM guest_identity_images gi WHERE gi.guest_id = gid.guest_id AND gi.side = 'back')) END AS guest_id_document,
+         r.created_at::text AS cursor_created
     FROM reservations r
     JOIN guests g ON g.id = r.guest_id
+    LEFT JOIN guest_identity_documents gid ON gid.guest_id = r.guest_id
     LEFT JOIN rooms ro ON ro.id = r.room_id
     LEFT JOIN LATERAL (SELECT sum(p.amount_kobo) AS total FROM payments p WHERE p.reservation_id = r.id AND p.status = 'settled') paid ON true`;
 
@@ -54,6 +64,7 @@ export function withActions<T extends { status: string; payment_status: string; 
       next_statuses: writer ? (TRANSITIONS[row.status] ?? []).filter((next) => !((next === "checked_in" || next === "no_show") && row.check_in > today)) : [],
       record_payment: writer && !CLOSED_STAYS.has(row.status) && (row.payment_status === "unpaid" || row.payment_status === "part_paid"),
       edit: writer ? editScope(row.status) : ("none" as const),
+      identity: writer,
     },
   }));
 }
@@ -461,4 +472,109 @@ export async function listReservationPayments(app: FastifyInstance, principal: P
     );
     return { payments };
   });
+}
+
+/** ID photos are phone snapshots of a card; a few megabytes is plenty. */
+export const MAX_ID_IMAGE_BYTES = 5 * 1024 * 1024;
+
+type GuestIdType = (typeof GUEST_ID_TYPES)[number];
+type GuestIdSide = (typeof GUEST_ID_SIDES)[number];
+
+export type GuestIdentityInput = {
+  idType: GuestIdType;
+  idNumber: string;
+  /** A new photo for a side replaces the stored one; `remove` deletes it. */
+  images: Partial<Record<GuestIdSide, { data: Buffer } | { remove: true }>>;
+};
+
+async function lockReservationGuest(tx: Sql, principal: Principal, id: string) {
+  const reservation = await tx.maybeOne<{ guest_id: string; reference: string }>(
+    `SELECT guest_id, reference FROM reservations WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+    [id, principal.propertyId],
+  );
+  if (!reservation) throw Errors.notFound("Reservation not found");
+  return reservation;
+}
+
+/**
+ * Records the guest's government-issued ID on a booking. The number is
+ * required; photos of the front and back are optional. The audit log notes
+ * what changed but never the ID number itself.
+ */
+export async function updateGuestIdentity(app: FastifyInstance, principal: Principal, id: string, input: GuestIdentityInput) {
+  const idNumber = input.idNumber.trim().replace(/\s+/g, " ");
+  if (idNumber.length < 1 || idNumber.length > 64) throw Errors.unprocessable("Enter the ID number (up to 64 characters)", "VALIDATION_FAILED");
+  const images = Object.entries(input.images).map(([side, change]) => {
+    if ("remove" in change) return { side, remove: true as const };
+    const contentType = detectImageType(change.data);
+    if (!contentType) throw Errors.unprocessable(`The ${side} photo is not a JPEG, PNG or WebP image`, "UNSUPPORTED_IMAGE");
+    return { side, remove: false as const, data: change.data, contentType, sha256: createHash("sha256").update(change.data).digest("hex") };
+  });
+
+  return withTransaction(app.db, async (tx) => {
+    const reservation = await lockReservationGuest(tx, principal, id);
+    const previous = await tx.maybeOne<{ id_type: string; id_number: string }>(`SELECT id_type, id_number FROM guest_identity_documents WHERE guest_id = $1`, [reservation.guest_id]);
+    await tx.exec(
+      `INSERT INTO guest_identity_documents(guest_id, id_type, id_number, updated_by) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (guest_id) DO UPDATE SET id_type = EXCLUDED.id_type, id_number = EXCLUDED.id_number, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [reservation.guest_id, input.idType, idNumber, principal.userId],
+    );
+    for (const image of images) {
+      if (image.remove) {
+        await tx.exec(`DELETE FROM guest_identity_images WHERE guest_id = $1 AND side = $2`, [reservation.guest_id, image.side]);
+      } else {
+        await tx.exec(
+          `INSERT INTO guest_identity_images(guest_id, side, content_type, byte_size, sha256, data, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (guest_id, side) DO UPDATE SET content_type = EXCLUDED.content_type, byte_size = EXCLUDED.byte_size, sha256 = EXCLUDED.sha256,
+             data = EXCLUDED.data, created_by = EXCLUDED.created_by, created_at = now()`,
+          [reservation.guest_id, image.side, image.contentType, image.data.length, image.sha256, image.data, principal.userId],
+        );
+      }
+    }
+    await recordEvent(tx, {
+      propertyId: principal.propertyId,
+      actorId: principal.userId,
+      action: previous ? "reservation.guest_id_updated" : "reservation.guest_id_recorded",
+      entityType: "reservation",
+      entityId: id,
+      details: {
+        idType: input.idType,
+        ...(previous && previous.id_type !== input.idType ? { previousIdType: previous.id_type } : {}),
+        numberChanged: previous ? previous.id_number !== idNumber : true,
+        photos: Object.fromEntries(images.map((image) => [image.side, image.remove ? "removed" : "replaced"])),
+      },
+      outbox: { type: "reservation.updated", reference: reservation.reference },
+    });
+    return { reservation: await getReservation(tx, principal, id) };
+  });
+}
+
+export async function deleteGuestIdentity(app: FastifyInstance, principal: Principal, id: string) {
+  return withTransaction(app.db, async (tx) => {
+    const reservation = await lockReservationGuest(tx, principal, id);
+    const removed = await tx.maybeOne(`DELETE FROM guest_identity_documents WHERE guest_id = $1 RETURNING 1`, [reservation.guest_id]);
+    if (removed) {
+      await recordEvent(tx, {
+        propertyId: principal.propertyId,
+        actorId: principal.userId,
+        action: "reservation.guest_id_removed",
+        entityType: "reservation",
+        entityId: id,
+        outbox: { type: "reservation.updated", reference: reservation.reference },
+      });
+    }
+    return { reservation: await getReservation(tx, principal, id) };
+  });
+}
+
+export async function loadGuestIdentityImage(app: FastifyInstance, principal: Principal, id: string, side: GuestIdSide) {
+  const image = await withConnection(app.db, (sql) =>
+    sql.maybeOne<{ content_type: string; sha256: string; data: Buffer }>(
+      `SELECT gi.content_type, gi.sha256, gi.data FROM reservations r JOIN guest_identity_images gi ON gi.guest_id = r.guest_id
+        WHERE r.id = $1 AND r.property_id = $2 AND gi.side = $3`,
+      [id, principal.propertyId, side],
+    ),
+  );
+  if (!image) throw Errors.notFound("No photo of that side of the ID");
+  return image;
 }

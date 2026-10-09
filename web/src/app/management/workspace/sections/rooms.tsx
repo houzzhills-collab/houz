@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
 import { api, errorMessage, type Reference, type Room, type RoomStatus } from "@/lib/api";
 import { dateLabel, dateTimeLabel, humanize, money, optionLabel, text, toKobo } from "../format";
-import { DetailList, Drawer, Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
+import { DetailList, Drawer, Empty, Field, InlineError, Modal, Tip, useAction, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
 
 function tone(status: string): string {
   if (status === "vacant_clean" || status === "inspected") return "status-green";
@@ -16,7 +16,10 @@ function RoomHistory({ room, reference }: { room: Room; reference: Reference }) 
   const history = useResource(() => api.rooms.history(room.id), room.id);
   return (
     <section className="detail-section">
-      <h3>History</h3>
+      <h3>
+        History
+        <Tip text="Every status change for this room, newest first, with who made it and when." />
+      </h3>
       <InlineError message={history.error} />
       <div className="activity-list">
         {(history.data ?? []).map((entry, index) => (
@@ -67,18 +70,18 @@ function RoomForm({ room, notify, onClose, onSaved }: { room: Room | null; notif
       }
     >
       <div className="form-row">
-        <Field label="Room number">
+        <Field label="Room number" tip="The number or name on the door, e.g. 204. Must be unique.">
           <input name="roomNumber" required maxLength={20} placeholder="e.g. 204" defaultValue={room?.room_number} />
         </Field>
-        <Field label="Room category">
+        <Field label="Room category" tip="The room type guests book on the website, e.g. “Executive Suite”. Rooms with the same category are sold together, and a website booking is placed in any free room of that category.">
           <input name="roomType" required maxLength={80} placeholder="e.g. Executive Suite" defaultValue={room?.room_type} />
         </Field>
       </div>
       <div className="form-row">
-        <Field label="Nightly rate (₦)">
+        <Field label="Nightly rate (₦)" tip="The price per night in naira. New bookings use this rate; existing bookings keep the price agreed when they were made.">
           <input name="rate" type="number" min="0" step="1" required defaultValue={room ? Number(room.nightly_rate_kobo) / 100 : undefined} />
         </Field>
-        <Field label="Guest capacity">
+        <Field label="Guest capacity" tip="The most guests the room sleeps. Bookings for more guests than this are refused.">
           <input name="capacity" type="number" min="1" max="12" defaultValue={room?.capacity ?? 2} required />
         </Field>
       </div>
@@ -130,7 +133,10 @@ export function RoomsSection({ notify, refreshKey, can, reference, focus }: Sect
     <section className="panel bookings-panel full-panel">
       <div className="panel-heading bookings-heading">
         <div>
-          <h2>Room inventory</h2>
+          <h2>
+            Room inventory
+            <Tip text="Every room, whether it's ready for a guest, its nightly rate and who's in it tonight. Housekeeping updates readiness here; select a room for details and history." />
+          </h2>
           <p>Readiness, nightly rate and current stay. Select a room for details, history and changes.</p>
         </div>
         <div className="heading-actions">
@@ -153,12 +159,12 @@ export function RoomsSection({ notify, refreshKey, can, reference, focus }: Sect
           <table>
             <thead>
               <tr>
-                <th>ROOM</th>
-                <th>TYPE</th>
-                {showRates && <th>RATE / NIGHT</th>}
-                <th>{showRates ? "GUEST / STAY" : "TURNOVER"}</th>
-                <th>STATUS</th>
-                <th>UPDATE</th>
+                <th data-tip="The room number.">ROOM</th>
+                <th data-tip="The room category guests book, e.g. Executive Suite.">TYPE</th>
+                {showRates && <th data-tip="The current price per night for new bookings.">RATE / NIGHT</th>}
+                <th data-tip={showRates ? "Who's staying tonight and their booking reference, if anyone." : "Whether the room needs cleaning before the next guest."}>{showRates ? "GUEST / STAY" : "TURNOVER"}</th>
+                <th data-tip="Vacant · clean: ready to sell. Vacant · dirty: needs cleaning after check-out. Inspected: cleaned and checked by a supervisor. Occupied: a guest is in. Maintenance / Out of order: can't be booked.">STATUS</th>
+                <th data-tip="Change the room's status, e.g. mark it clean after housekeeping. Only the changes allowed from its current status are offered.">UPDATE</th>
               </tr>
             </thead>
             <tbody>
@@ -233,24 +239,27 @@ export function RoomsSection({ notify, refreshKey, can, reference, focus }: Sect
           <DetailList
             title="Room"
             rows={[
-              ["Room number", open.room_number],
-              ["Category", open.room_type],
-              ["Sleeps", String(open.capacity)],
-              ["Nightly rate", open.nightly_rate_kobo !== null ? money(open.nightly_rate_kobo) : null],
-              ["Apartment unit", open.apartment_id ? "Yes. Edit its details, price and photos from Apartments." : null],
+              ["Room number", open.room_number, "The number on the door."],
+              ["Category", open.room_type, "The room type guests book on the website."],
+              ["Sleeps", String(open.capacity), "The most guests the room can take."],
+              ["Nightly rate", open.nightly_rate_kobo !== null ? money(open.nightly_rate_kobo) : null, "The current price per night for new bookings."],
+              ["Apartment unit", open.apartment_id ? "Yes. Edit its details, price and photos from Apartments." : null, "This room is a shortlet apartment listed on the website."],
             ]}
           />
           <DetailList
             title="Current stay"
             rows={[
-              ["Guest", open.stay?.guest ?? (open.stay ? "In house" : "No one tonight")],
-              ["Reference", open.stay?.reference],
-              ["Check-out", open.stay ? dateLabel(open.stay.checkOut) : null],
+              ["Guest", open.stay?.guest ?? (open.stay ? "In house" : "No one tonight"), "Who is booked into this room tonight."],
+              ["Reference", open.stay?.reference, "The booking reference, to find the stay in Reservations."],
+              ["Check-out", open.stay ? dateLabel(open.stay.checkOut) : null, "When the current guest leaves."],
             ]}
           />
           {open.next_statuses.length > 0 && open.active !== false && (
             <section className="detail-section">
-              <h3>Change status</h3>
+              <h3>
+                Change status
+                <Tip text="Move the room to its next state, e.g. Vacant · dirty → Vacant · clean once housekeeping is done. Check-in and check-out update it automatically." />
+              </h3>
               <div className="chip-list">
                 {open.next_statuses.map((status) => (
                   <button key={status} className="button-secondary" onClick={() => void change(open, status)}>

@@ -8,7 +8,7 @@ import { ArrowLeft, ImagePlus, Plus, Star, Trash2, X } from "lucide-react";
 import { api, errorMessage, type Apartment, type ApartmentInput } from "@/lib/api";
 import { text, toKobo } from "./format";
 import { MAX_APARTMENT_PHOTOS, PhotoManager, StatusPill } from "./sections/apartments";
-import { Field, InlineError, useResource, type SectionProps } from "./ui";
+import { Field, InlineError, Tip, useResource, type SectionProps } from "./ui";
 
 const SUGGESTIONS = {
   amenities: ["Wi-Fi", "Air conditioning", "24-hour power", "Smart TV", "Kitchen", "Washing machine", "Hot water", "Workspace", "Netflix", "Iron"],
@@ -17,15 +17,15 @@ const SUGGESTIONS = {
   houseRules: ["No smoking", "No parties", "No pets", "Quiet hours after 10pm", "ID required at check-in"],
 } as const;
 type ListKey = keyof typeof SUGGESTIONS;
-const LIST_LABELS: Record<ListKey, { label: string; hint: string }> = {
-  amenities: { label: "Amenities", hint: "In the apartment" },
-  features: { label: "Features", hint: "What makes it special" },
-  facilities: { label: "Shared facilities", hint: "On the property" },
-  houseRules: { label: "House rules", hint: "Shown before booking" },
+const LIST_LABELS: Record<ListKey, { label: string; hint: string; tip: string }> = {
+  amenities: { label: "Amenities", hint: "In the apartment", tip: "Things inside the apartment guests can use, e.g. Wi-Fi, air conditioning, kitchen, smart TV. Shown on the listing." },
+  features: { label: "Features", hint: "What makes it special", tip: "Highlights that set this apartment apart, e.g. city view, private balcony, newly renovated." },
+  facilities: { label: "Shared facilities", hint: "On the property", tip: "Things on the property shared with other guests, e.g. pool, gym, parking, 24-hour security, backup power." },
+  houseRules: { label: "House rules", hint: "Shown before booking", tip: "Rules guests agree to before booking, e.g. no smoking, no parties, quiet hours." },
 };
 
 /** Labels as removable chips: type and press Enter or comma, or pick a suggestion. */
-function TagInput({ label, hint, values, suggestions, onChange }: { label: string; hint: string; values: string[]; suggestions: readonly string[]; onChange: (next: string[]) => void }) {
+function TagInput({ label, hint, tip, values, suggestions, onChange }: { label: string; hint: string; tip: string; values: string[]; suggestions: readonly string[]; onChange: (next: string[]) => void }) {
   const [draft, setDraft] = useState("");
   const add = (value: string) => {
     const clean = value.trim().slice(0, 80);
@@ -45,6 +45,7 @@ function TagInput({ label, hint, values, suggestions, onChange }: { label: strin
     <div className="form-field">
       <span>
         {label} <small className="field-hint">· {hint}</small>
+        <Tip text={`${tip} Type and press Enter (or comma) to add one, or pick a suggestion.`} />
       </span>
       <div className="tag-input">
         {values.map((value) => (
@@ -221,71 +222,81 @@ function EditorForm({ apartment, notify, onSaved }: { apartment: Apartment | nul
       <div className="editor-main">
         <InlineError message={error} onDismiss={() => setError("")} />
         <section className="panel editor-card">
-          <h2>Listing</h2>
+          <h2>
+            Listing
+            <Tip text="The name, category and text guests see on the website for this apartment." />
+          </h2>
           <p>How the apartment appears on the website.</p>
           <div className="form-row">
-            <Field label="Name" hint="e.g. The Penthouse">
+            <Field label="Name" hint="e.g. The Penthouse" tip="The apartment's public name on the website, in emails and on booking pages.">
               <input name="name" required maxLength={80} defaultValue={a?.name} />
             </Field>
-            <Field label="Category" hint="e.g. Studio, 2-bedroom">
+            <Field label="Category" hint="e.g. Studio, 2-bedroom" tip="The kind of apartment, shown on the listing card and used to group similar apartments.">
               <input name="category" required maxLength={60} defaultValue={a?.category} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Unit code" hint="Internal and unique, e.g. P1">
+            <Field label="Unit code" hint="Internal and unique, e.g. P1" tip="A short internal code staff use for this unit. It's also the room number used for its bookings and housekeeping. Not shown to guests.">
               <input name="unitCode" required maxLength={20} defaultValue={a?.unitCode} />
             </Field>
-            <Field label="Web address" hint="Leave empty to use the name">
+            <Field
+              label="Web address"
+              hint="Leave empty to use the name"
+              tip="The end of the apartment's page address: /apartments/the-penthouse. Lowercase letters, numbers and hyphens only. Changing it breaks links already shared."
+            >
               <input name="slug" maxLength={80} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="the-penthouse" defaultValue={a?.slug} />
             </Field>
           </div>
-          <Field label="Summary" hint="One line for the apartment card">
+          <Field label="Summary" hint="One line for the apartment card" tip="A short line shown under the name on apartment cards and in search results.">
             <input name="summary" maxLength={300} defaultValue={a?.summary ?? ""} />
           </Field>
-          <Field label="Description">
+          <Field label="Description" tip="The full description on the apartment's page: the space, the feel, what's nearby. Line breaks are kept.">
             <textarea name="description" maxLength={10000} rows={6} defaultValue={a?.description ?? ""} />
           </Field>
         </section>
 
         <section className="panel editor-card">
-          <h2>Price and capacity</h2>
+          <h2>
+            Price and capacity
+            <Tip text="What a night costs, how many people it sleeps and the stay rules. Changes apply to new bookings only; existing bookings keep their agreed price." />
+          </h2>
           <p>Price and capacity changes apply to new bookings only.</p>
           <div className="form-row form-row-3">
-            <Field label="Nightly rate (₦)">
+            <Field label="Nightly rate (₦)" tip="The price per night in naira. A stay costs this × the number of nights.">
               <input name="rate" type="number" min="1" step="1" required defaultValue={a?.pricing.nightlyRateKobo ? Number(a.pricing.nightlyRateKobo) / 100 : undefined} />
             </Field>
-            <Field label="Caution fee (₦)" hint="Collected separately">
+            <Field label="Caution fee (₦)" hint="Collected separately" tip="A refundable security deposit against damage. It's shown to guests but not charged in the online checkout; collect and refund it separately.">
               <input name="cautionFee" type="number" min="0" step="1" defaultValue={a?.pricing.cautionFeeKobo ? Number(a.pricing.cautionFeeKobo) / 100 : 0} />
             </Field>
-            <Field label="Minimum nights">
+            <Field label="Minimum nights" tip="The shortest stay you accept. Shorter bookings are refused.">
               <input name="minimumNights" type="number" min="1" max="365" required defaultValue={a?.stayRules.minimumNights ?? 1} />
             </Field>
           </div>
           <div className="form-row form-row-3">
-            <Field label="Maximum guests">
+            <Field label="Maximum guests" tip="The most people allowed to stay. Bookings for more guests are refused.">
               <input name="maxGuests" type="number" min="1" max="12" required defaultValue={a?.capacity.maxGuests ?? 2} />
             </Field>
-            <Field label="Bedrooms">
+            <Field label="Bedrooms" tip="Number of separate bedrooms. Use 0 for a studio.">
               <input name="bedrooms" type="number" min="0" max="50" required defaultValue={a?.capacity.bedrooms ?? 1} />
             </Field>
-            <Field label="Beds">
+            <Field label="Beds" tip="Total number of beds across all rooms.">
               <input name="beds" type="number" min="0" max="100" required defaultValue={a?.capacity.beds ?? 1} />
             </Field>
           </div>
           <div className="form-row form-row-3">
-            <Field label="Bathrooms">
+            <Field label="Bathrooms" tip="Number of bathrooms.">
               <input name="bathrooms" type="number" min="0" max="50" required defaultValue={a?.capacity.bathrooms ?? 1} />
             </Field>
-            <Field label="Size (sqm)">
+            <Field label="Size (sqm)" tip="Floor area in square metres. Optional.">
               <input name="sizeSqm" type="number" min="1" step="0.1" defaultValue={a?.capacity.sizeSqm ?? ""} />
             </Field>
             <div />
           </div>
           <div className="form-row form-row-3">
-            <Field label="Check-in from">
+            <Field label="Check-in from" tip="The earliest time guests can arrive on their check-in day.">
               <input name="checkInTime" type="time" required defaultValue={a?.stayRules.checkInTime ?? "14:00"} />
             </Field>
-            <Field label="Check-out by">
+            <Field label="Check-out by" tip="The latest time guests must leave on their check-out day.">
               <input name="checkOutTime" type="time" required defaultValue={a?.stayRules.checkOutTime ?? "12:00"} />
             </Field>
             <div />
@@ -293,46 +304,55 @@ function EditorForm({ apartment, notify, onSaved }: { apartment: Apartment | nul
         </section>
 
         <section className="panel editor-card">
-          <h2>Location</h2>
+          <h2>
+            Location
+            <Tip text="Where the apartment is. Guests see only the area and city until they book; the street address and directions are sent with the booking confirmation." />
+          </h2>
           <p>Guests see the area and city. The street address and directions are sent only after they book.</p>
-          <Field label="Street address">
+          <Field label="Street address" tip="House number and street. Kept private until the guest has booked.">
             <input name="addressLine" maxLength={200} defaultValue={a?.location.addressLine ?? ""} />
           </Field>
           <div className="form-row">
-            <Field label="Area">
+            <Field label="Area" tip="The neighbourhood, e.g. Malali. Shown publicly on the listing.">
               <input name="area" maxLength={120} defaultValue={a?.location.area ?? ""} placeholder="e.g. Malali" />
             </Field>
-            <Field label="City">
+            <Field label="City" tip="The city, shown publicly on the listing.">
               <input name="city" required maxLength={80} defaultValue={a?.location.city ?? "Kaduna"} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="State">
+            <Field label="State" tip="The state the apartment is in.">
               <input name="state" required maxLength={80} defaultValue={a?.location.state ?? "Kaduna"} />
             </Field>
-            <Field label="Country">
+            <Field label="Country" tip="The country the apartment is in.">
               <input name="country" maxLength={80} defaultValue={a?.location.country ?? "Nigeria"} />
             </Field>
           </div>
-          <Field label="Directions">
+          <Field label="Directions" tip="How to find the apartment: landmarks, gate colour, who to call on arrival. Sent to guests only after they book.">
             <textarea name="directions" maxLength={2000} rows={3} defaultValue={a?.location.directions ?? ""} />
           </Field>
         </section>
 
         <section className="panel editor-card">
-          <h2>What&apos;s included</h2>
+          <h2>
+            What&apos;s included
+            <Tip text="Lists shown on the apartment's page so guests know what to expect." />
+          </h2>
           <p>Pick from the suggestions or type your own.</p>
           {(Object.keys(SUGGESTIONS) as ListKey[]).map((key) => (
-            <TagInput key={key} label={LIST_LABELS[key].label} hint={LIST_LABELS[key].hint} values={lists[key]} suggestions={SUGGESTIONS[key]} onChange={(next) => setLists((current) => ({ ...current, [key]: next }))} />
+            <TagInput key={key} label={LIST_LABELS[key].label} hint={LIST_LABELS[key].hint} tip={LIST_LABELS[key].tip} values={lists[key]} suggestions={SUGGESTIONS[key]} onChange={(next) => setLists((current) => ({ ...current, [key]: next }))} />
           ))}
         </section>
 
         <section className="panel editor-card">
-          <h2>Policies</h2>
-          <Field label="Cancellation policy">
+          <h2>
+            Policies
+            <Tip text="The terms guests accept when they book. Shown on the apartment's page." />
+          </h2>
+          <Field label="Cancellation policy" tip="What happens if the guest cancels, e.g. full refund up to 7 days before arrival, none after.">
             <textarea name="cancellationPolicy" maxLength={5000} rows={3} defaultValue={a?.policies.cancellation ?? ""} />
           </Field>
-          <Field label="Damage & caution fee policy">
+          <Field label="Damage & caution fee policy" tip="How the caution fee works: when it's collected, what damage it covers, and when it's refunded.">
             <textarea name="warrantyPolicy" maxLength={5000} rows={3} defaultValue={a?.policies.warranty ?? ""} />
           </Field>
         </section>
@@ -341,7 +361,10 @@ function EditorForm({ apartment, notify, onSaved }: { apartment: Apartment | nul
       <aside className="editor-aside">
         <section className="panel editor-card">
           <div className="editor-card-heading">
-            <h2>Photos</h2>
+            <h2>
+              Photos
+              <Tip text="Pictures shown on the website. The first (cover) photo appears on the listing card. A published apartment needs at least one photo." />
+            </h2>
             {current && <StatusPill status={current.status} />}
           </div>
           <p>{current ? "Changes to photos are saved straight away. The first photo is the cover." : "Choose photos now; they're uploaded when you create the apartment. The first is the cover."}</p>

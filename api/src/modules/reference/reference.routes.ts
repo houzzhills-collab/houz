@@ -33,6 +33,7 @@ const referenceRoutes: FastifyPluginAsyncTypebox = async (app) => {
             stockMovements: OptionList,
             paymentProviders: OptionList,
             exceptionKinds: OptionList,
+            guestIdTypes: OptionList,
           }),
           ...errorResponses(401),
         },

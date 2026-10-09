@@ -3,6 +3,19 @@ import { NextCursor, PageQuery } from "../../lib/pagination.js";
 import { IdParams, IsoDate, KoboString, Nullable, StringEnum, Text, Timestamp, Uuid, errorResponses } from "../../lib/schemas.js";
 
 export const RESERVATION_STATUSES = ["hold", "pending_payment", "confirmed", "checked_in", "checked_out", "cancelled", "no_show", "expired"] as const;
+export const GUEST_ID_TYPES = ["national_id", "passport", "drivers_license", "voters_card", "other"] as const;
+export const GUEST_ID_SIDES = ["front", "back"] as const;
+
+const GuestIdDocument = Type.Object(
+  {
+    id_type: StringEnum(GUEST_ID_TYPES),
+    id_number: Type.String(),
+    front: Type.Boolean({ description: "A photo of the front is on file" }),
+    back: Type.Boolean({ description: "A photo of the back is on file" }),
+    updated_at: Timestamp,
+  },
+  { description: "The guest's government-issued ID, or null when none is recorded" },
+);
 
 export const ReservationRow = Type.Object({
   id: Uuid,
@@ -23,6 +36,7 @@ export const ReservationRow = Type.Object({
   source: Type.String(),
   notes: Nullable(Type.String()),
   created_at: Timestamp,
+  guest_id_document: Nullable(GuestIdDocument),
   actions: Type.Object(
     {
       next_statuses: Type.Array(Type.String(), { description: "Stay changes the caller may make now" }),
@@ -30,6 +44,7 @@ export const ReservationRow = Type.Object({
       edit: Type.Union([Type.Literal("full"), Type.Literal("stay_end"), Type.Literal("contact"), Type.Literal("none")], {
         description: "What PATCH /{id}/details may change: everything, guest details and check-out (in-house), guest details only (awaiting online payment), or nothing",
       }),
+      identity: Type.Boolean({ description: "May record or change the guest's ID (PUT/DELETE /{id}/identity)" }),
     },
     { description: "What the caller may do with this reservation" },
   ),
@@ -162,4 +177,37 @@ export const RecordPaymentSchema = {
     200: Type.Object({ payment: Type.Object({ id: Uuid, duplicate: Type.Boolean(), paid: Type.Boolean(), paymentStatus: Type.Union([Type.Literal("pending"), Type.Literal("settled")]) }) }),
     ...errorResponses(401, 403, 404, 409, 422),
   },
+};
+
+export const IdentitySideParams = Type.Object({ id: Uuid, side: StringEnum(GUEST_ID_SIDES) }, { additionalProperties: false });
+
+export const UpdateIdentitySchema = {
+  tags: ["reservations"],
+  summary: "Record or change the guest's government-issued ID (multipart/form-data)",
+  description:
+    "Fields: `idType` (" +
+    GUEST_ID_TYPES.join(", ") +
+    ") and `idNumber`, both required. Optional `front` and `back` file parts (JPEG, PNG or WebP, up to 5 MB each) replace the stored photo of that side; `removeFront` / `removeBack` set to `true` delete it. Audited.",
+  security,
+  consumes: ["multipart/form-data"],
+  params: IdParams,
+  response: { 200: Type.Object({ reservation: ReservationRow }), ...errorResponses(401, 403, 404, 413, 415, 422) },
+};
+
+export const DeleteIdentitySchema = {
+  tags: ["reservations"],
+  summary: "Remove the guest's ID and its photos",
+  security,
+  params: IdParams,
+  response: { 200: Type.Object({ reservation: ReservationRow }), ...errorResponses(401, 403, 404) },
+};
+
+export const IdentityImageSchema = {
+  tags: ["reservations"],
+  summary: "A photo of the guest's ID (front or back)",
+  description: "Returns the image bytes. Never cached by shared caches.",
+  security,
+  params: IdentitySideParams,
+  produces: ["image/jpeg", "image/png", "image/webp"],
+  response: { ...errorResponses(401, 403, 404) },
 };

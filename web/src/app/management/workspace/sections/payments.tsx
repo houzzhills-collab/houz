@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, BedDouble, Check, Download, Search, Utensils } from "lucide-react";
 import { api, errorMessage, type PaymentException, type PaymentRecord } from "@/lib/api";
 import { dateTimeLabel, humanize, money, optionLabel, text } from "../format";
-import { Empty, Field, InlineError, Modal, download, useAction, useResource, type SectionProps } from "../ui";
+import { Empty, Field, InlineError, Modal, Tip, download, useAction, useResource, type SectionProps } from "../ui";
 
 function ExceptionsPanel({ notify, refreshKey }: Pick<SectionProps, "notify" | "refreshKey">) {
   const [status, setStatus] = useState<"open" | "resolved">("open");
@@ -17,7 +17,10 @@ function ExceptionsPanel({ notify, refreshKey }: Pick<SectionProps, "notify" | "
     <section className="panel bookings-panel full-panel">
       <div className="panel-heading bookings-heading">
         <div>
-          <h2>Payment exceptions</h2>
+          <h2>
+            Payment exceptions
+            <Tip text="Online payments the system couldn't match cleanly to a booking, e.g. paid after the hold expired, the wrong amount, or an unknown reference. Someone must check each one and record what was done." />
+          </h2>
           <p>Payments that need a decision. Resolving records what you did; it never confirms a stay or issues a refund.</p>
         </div>
       </div>
@@ -35,11 +38,11 @@ function ExceptionsPanel({ notify, refreshKey }: Pick<SectionProps, "notify" | "
         <table>
           <thead>
             <tr>
-              <th>ISSUE</th>
-              <th>REFERENCE</th>
-              <th>EXPECTED / RECEIVED</th>
-              <th>DETECTED</th>
-              <th>{status === "open" ? "ACTION" : "RESOLUTION"}</th>
+              <th data-tip="What went wrong with the payment, e.g. paid after the hold expired, amount doesn't match, or no matching booking.">ISSUE</th>
+              <th data-tip="The booking reference, or the payment provider's reference when no booking matched, and which provider it came through.">REFERENCE</th>
+              <th data-tip="What the booking expected to be paid / what the payment provider actually received.">EXPECTED / RECEIVED</th>
+              <th data-tip="When the system noticed the problem.">DETECTED</th>
+              <th data-tip={status === "open" ? "Record what you did about it, e.g. refunded through the provider or re-booked the guest." : "What was done, by whom and when."}>{status === "open" ? "ACTION" : "RESOLUTION"}</th>
             </tr>
           </thead>
           <tbody>
@@ -96,7 +99,10 @@ function ExceptionsPanel({ notify, refreshKey }: Pick<SectionProps, "notify" | "
             })
           }
         >
-          <Field label="What was done (recorded in the audit log)">
+          <Field
+            label="What was done (recorded in the audit log)"
+            tip="Describe how you handled it, e.g. “Refunded ₦40,000 via Paystack” or “Guest re-booked as HH-…”. Resolving only records this note; it doesn't move money or change the booking."
+          >
             <textarea name="note" required minLength={5} maxLength={1000} rows={4} />
           </Field>
         </Modal>
@@ -145,17 +151,23 @@ export function PaymentsSection({ notify, refreshKey, can, reference }: SectionP
     <>
       <section className="payment-summary-grid">
         <article>
-          <span>Settled</span>
+          <span className="metric-label" data-tip="Payments confirmed as received: cash, POS, confirmed bank transfers and completed online checkouts. This is counted as revenue.">
+            Settled
+          </span>
           <strong>{money(totals?.settledKobo)}</strong>
           <small>{totals?.count ?? 0} records in the register</small>
         </article>
         <article>
-          <span>Awaiting confirmation</span>
+          <span className="metric-label" data-tip="Bank transfers recorded by staff that an owner or manager hasn't yet confirmed in the company account. Not counted as revenue until confirmed.">
+            Awaiting confirmation
+          </span>
           <strong>{money(totals?.pendingKobo)}</strong>
           <small>{pending.length} transfer{pending.length === 1 ? "" : "s"} in this view · not counted as revenue</small>
         </article>
         <article>
-          <span>Failed or abandoned</span>
+          <span className="metric-label" data-tip="Online checkouts that failed or that the guest left unfinished. No money was received.">
+            Failed or abandoned
+          </span>
           <strong>{money(totals?.failedKobo)}</strong>
           <small>Unfinished online checkouts</small>
         </article>
@@ -163,7 +175,10 @@ export function PaymentsSection({ notify, refreshKey, can, reference }: SectionP
       <section className="panel bookings-panel full-panel payment-register">
         <div className="panel-heading bookings-heading">
           <div>
-            <h2>Payment register</h2>
+            <h2>
+              Payment register
+              <Tip text="Every payment for rooms and the restaurant, newest first. Bank transfers stay pending until an owner or manager confirms the money is in the company account. Export CSV downloads the register for accounting." />
+            </h2>
             <p>Every room and restaurant payment. Confirm bank transfers only after they appear in the company account.</p>
           </div>
           <button className="button-secondary" onClick={() => void exportCsv()}>
@@ -186,13 +201,13 @@ export function PaymentsSection({ notify, refreshKey, can, reference }: SectionP
           <table>
             <thead>
               <tr>
-                <th>PAYMENT</th>
-                <th>GUEST / UNIT</th>
-                <th>METHOD / REFERENCE</th>
-                <th>RECORDED BY</th>
-                <th>DATE</th>
-                <th>AMOUNT</th>
-                <th>STATUS / ACTION</th>
+                <th data-tip="The booking reference or restaurant receipt number, and whether it's for accommodation or the restaurant.">PAYMENT</th>
+                <th data-tip="Who paid, and the room, apartment or restaurant order it was for.">GUEST / UNIT</th>
+                <th data-tip="How it was paid (cash, POS, bank transfer, online) and the transfer reference, sender name or provider reference.">METHOD / REFERENCE</th>
+                <th data-tip="The staff member who recorded it (“Online” for website payments), and who confirmed a bank transfer.">RECORDED BY</th>
+                <th data-tip="When the payment was recorded.">DATE</th>
+                <th data-tip="How much was paid.">AMOUNT</th>
+                <th data-tip="Settled: received. Pending confirmation: a bank transfer to check against the company account, then confirm. Failed: not received.">STATUS / ACTION</th>
               </tr>
             </thead>
             <tbody>

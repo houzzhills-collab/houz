@@ -1,6 +1,7 @@
 import { ApiError, type ApiClient } from "./client";
 import type {
   Apartment,
+  GuestIdSide,
   GuestBooking,
   GuestSession,
   ApartmentBookings,
@@ -263,6 +264,20 @@ export function createHttpClient(baseUrl: string): ApiClient {
       updateDetails: async (id, changes) =>
         (await request<{ reservation: Reservation }>("PATCH", `/management/reservations/${encodeURIComponent(id)}/details`, { body: changes })).reservation,
       payments: async (id) => (await request<{ payments: ReservationPayment[] }>("GET", `/management/reservations/${encodeURIComponent(id)}/payments`)).payments,
+      async updateIdentity(id, input) {
+        const form = new FormData();
+        form.append("idType", input.idType);
+        form.append("idNumber", input.idNumber);
+        for (const side of ["front", "back"] as const) {
+          const change = input[side];
+          if (change === "remove") form.append(side === "front" ? "removeFront" : "removeBack", "true");
+          else if (change) form.append(side, change, change.name);
+        }
+        return (await request<{ reservation: Reservation }>("PUT", `/management/reservations/${encodeURIComponent(id)}/identity`, { form })).reservation;
+      },
+      deleteIdentity: async (id) => (await request<{ reservation: Reservation }>("DELETE", `/management/reservations/${encodeURIComponent(id)}/identity`)).reservation,
+      identityImage: async (id, side: GuestIdSide) =>
+        (await exchange("GET", `/management/reservations/${encodeURIComponent(id)}/identity/${side}`, { headers: { Accept: "image/*" } })).blob(),
       recordPayment: async (id, input) =>
         (
           await request<{ payment: { paymentStatus: "pending" | "settled" } }>("POST", `/management/reservations/${encodeURIComponent(id)}/payments`, {

@@ -1,5 +1,7 @@
 import type {
   Apartment,
+  GuestIdInput,
+  GuestIdSide,
   GuestBooking,
   GuestSession,
   ApartmentStatus,
@@ -85,6 +87,11 @@ export interface ApiClient {
     updateDetails(id: string, changes: ReservationChanges): Promise<Reservation>;
     payments(id: string): Promise<ReservationPayment[]>;
     recordPayment(id: string, input: RecordPaymentInput): Promise<{ paymentStatus: "pending" | "settled" }>;
+    /** Records or changes the guest's government-issued ID; photos are optional. */
+    updateIdentity(id: string, input: GuestIdInput): Promise<Reservation>;
+    deleteIdentity(id: string): Promise<Reservation>;
+    /** A photo of one side of the guest's ID (sent with the bearer token, so not usable as an `<img src>`). */
+    identityImage(id: string, side: GuestIdSide): Promise<Blob>;
   };
   payments: {
     register(): Promise<PaymentRegister>;
@@ -120,7 +127,7 @@ export interface ApiClient {
   inventory: {
     list(options?: { includeArchived?: boolean }): Promise<InventoryItem[]>;
     createItem(input: NewInventoryItemInput): Promise<{ id: string }>;
-    /** Edits, archives (`active: false`) or restores an item. Quantity changes only through movements. */
+    /** Edits, archives (`active: false`) or restores an item. A new `quantity` is recorded in the ledger as a count adjustment. */
     updateItem(id: string, changes: InventoryItemChanges): Promise<void>;
     movements(id: string): Promise<StockMovement[]>;
     recordMovement(input: StockMovementInput): Promise<void>;

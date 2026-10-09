@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, Building2, CreditCard, Mail, RefreshCw, Send, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { api, errorMessage, type EmailLogEntry, type SettingView, type SettingsChanges, type SettingsSnapshot } from "@/lib/api";
 import { dateTimeLabel } from "../format";
-import { Empty, Field, InlineError, useAction, useResource, type SectionProps } from "../ui";
+import { Empty, Field, InlineError, Tip, useAction, useResource, type SectionProps } from "../ui";
 
 const EMAIL_SWITCHES = ["email.guest_notifications", "email.staff_notifications", "email.management_alerts"];
 
@@ -13,6 +13,7 @@ function SettingInput({ setting, value, onChange, clear, onClear }: { setting: S
     return (
       <Field
         label={setting.label}
+        tip={`${setting.description} This is a secret from the provider's dashboard: it's encrypted on the server and never shown again once saved.`}
         hint={!setting.readable ? "The saved value cannot be decrypted with the server's key. Enter it again." : setting.configured ? `Saved ${setting.hint ?? ""}. Leave blank to keep it.` : `Not set. ${setting.description}`}
       >
         <input type="password" autoComplete="off" spellCheck={false} value={value} disabled={clear} onChange={(event) => onChange(event.target.value)} placeholder={setting.configured ? "Enter a new value to replace it" : "Paste the key"} />
@@ -26,14 +27,18 @@ function SettingInput({ setting, value, onChange, clear, onClear }: { setting: S
   }
   if (setting.type === "integer") {
     return (
-      <Field label={setting.label} hint={`${setting.description} Default ${String(setting.default)}.`}>
+      <Field
+        label={setting.label}
+        tip={`${setting.description}${setting.minimum !== null && setting.maximum !== null ? ` Allowed: ${setting.minimum} to ${setting.maximum}.` : ""} Default ${String(setting.default)}.`}
+        hint={`${setting.description} Default ${String(setting.default)}.`}
+      >
         <input type="number" min={setting.minimum ?? undefined} max={setting.maximum ?? undefined} step="1" required value={value} onChange={(event) => onChange(event.target.value)} />
       </Field>
     );
   }
   if (setting.type === "string") {
     return (
-      <Field label={setting.label} hint={setting.description}>
+      <Field label={setting.label} tip={setting.description} hint={setting.description}>
         <input type="text" autoComplete="off" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} placeholder={setting.key === "email.from_address" ? "Houzz Hills <bookings@yourdomain.com>" : "frontdesk@yourdomain.com"} />
       </Field>
     );
@@ -41,10 +46,13 @@ function SettingInput({ setting, value, onChange, clear, onClear }: { setting: S
   return null;
 }
 
-function ProviderChoice({ legend, name, setting, value, onChange }: { legend: string; name: string; setting: SettingView | undefined; value: string; onChange: (value: string) => void }) {
+function ProviderChoice({ legend, tip, name, setting, value, onChange }: { legend: string; tip?: string; name: string; setting: SettingView | undefined; value: string; onChange: (value: string) => void }) {
   return (
     <fieldset className="provider-choice">
-      <legend>{legend}</legend>
+      <legend>
+        {legend}
+        {tip && <Tip text={tip} />}
+      </legend>
       {(setting?.options ?? []).map((option) => (
         <label key={option.value} className={value === option.value ? "selected" : ""}>
           <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} />
@@ -67,6 +75,7 @@ function EmailLogPanel({ version }: { version: number }) {
         <div>
           <h2>
             <Mail size={16} /> Email delivery log
+            <Tip text="Every email the system sent or tried to send in the last 7 days, so you can check a guest or staff member actually received their message." />
           </h2>
           <p>
             Last 7 days: {counts.sent ?? 0} sent · {counts.failed ?? 0} failed · {counts.skipped ?? 0} skipped
@@ -85,11 +94,11 @@ function EmailLogPanel({ version }: { version: number }) {
           <table>
             <thead>
               <tr>
-                <th>SUBJECT</th>
-                <th>TO</th>
-                <th>QUEUED</th>
-                <th>STATUS</th>
-                <th>NOTE</th>
+                <th data-tip="The email's subject, and who it was for: a guest, a staff account or a management alert.">SUBJECT</th>
+                <th data-tip="The recipient's email address.">TO</th>
+                <th data-tip="When the email was created and put in the sending queue.">QUEUED</th>
+                <th data-tip="Sent: accepted by the email service. Queued / sending: waiting or in progress. Skipped: not sent because that type of email is switched off or not configured. Failed: couldn't be delivered.">STATUS</th>
+                <th data-tip="Why an email failed or was skipped, or how many attempts it took.">NOTE</th>
               </tr>
             </thead>
             <tbody>
@@ -235,17 +244,24 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
             <div>
               <h2>
                 <CreditCard size={16} /> Online payments
+                <Tip text="Lets guests pay for website bookings by card or transfer through Paystack or Flutterwave. Choose a provider, paste its secret key, then add the webhook URL in the provider's dashboard so payments confirm bookings automatically." />
               </h2>
               <p>Hosted checkout for website bookings. Keys are encrypted on the server and never shown again.</p>
             </div>
           </div>
-          <ProviderChoice legend="Provider" name="provider" setting={providerSetting} value={provider} onChange={setProvider} />
+          <ProviderChoice
+            legend="Provider"
+            tip="Which payment company processes website payments. Off: guests can still book, but can't pay online."
+            name="provider" setting={providerSetting} value={provider} onChange={setProvider} />
           {secrets
             // Credentials for the selected provider, plus any saved ones so they can be cleared.
             .filter((setting) => setting.group === "payments" && (setting.provider === provider || (setting.configured && setting.provider !== null)))
             .map(input)}
           <div className="webhook-url">
-            <span>Webhook URL for the provider dashboard</span>
+            <span>
+              Webhook URL for the provider dashboard
+              <Tip text="Copy this address into your Paystack or Flutterwave dashboard (Settings → Webhooks). The provider calls it when a payment succeeds, which confirms the booking automatically." />
+            </span>
             {snapshot.environment.webhookUrl ? (
               <div className="secret-reveal">
                 <code>{snapshot.environment.webhookUrl}</code>
@@ -272,15 +288,22 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
             <div>
               <h2>
                 <Mail size={16} /> Email notifications
+                <Tip text="Sends booking confirmations, receipts, staff sign-in emails and management alerts through Resend. Add the API key and sender, send yourself a test, then choose which emails to send." />
               </h2>
               <p>Booking confirmations, receipts, staff account emails and management alerts, sent through Resend. The key is encrypted on the server and never shown again.</p>
             </div>
           </div>
-          <ProviderChoice legend="Delivery" name="email-provider" setting={emailProviderSetting} value={emailProvider} onChange={setEmailProvider} />
+          <ProviderChoice
+            legend="Delivery"
+            tip="How emails are delivered. Off: no emails are sent; they're logged as skipped."
+            name="email-provider" setting={emailProviderSetting} value={emailProvider} onChange={setEmailProvider} />
           {resendKey && input(resendKey)}
           {texts.filter((setting) => setting.group === "email").map(input)}
           <fieldset className="email-switches">
-            <legend>What to send</legend>
+            <legend>
+              What to send
+              <Tip text="Turn each group of emails on or off: messages to guests, messages to staff about their accounts, and alerts to owners and managers." />
+            </legend>
             {EMAIL_SWITCHES.map((key) => {
               const setting = byKey.get(key);
               if (!setting) return null;
@@ -308,6 +331,7 @@ function SettingsForm({ snapshot, notify, onSaved }: { snapshot: SettingsSnapsho
             <div>
               <h2>
                 <SlidersHorizontal size={16} /> Booking and payment rules
+                <Tip text="Limits that every booking follows, from staff and the website, such as how far ahead guests can book and how long an unpaid booking holds its room." />
               </h2>
               <p>Apply to staff and website bookings immediately.</p>
             </div>
@@ -348,13 +372,14 @@ function PropertyNamePanel({ name, notify }: { name: string; notify: SectionProp
         <div>
           <h2>
             <Building2 size={16} /> Property name
+            <Tip text="Your business name as guests and staff see it." />
           </h2>
           <p>Shown in the workspace logo, on receipts and booking pages, and as the brand at the top and bottom of every email.</p>
         </div>
       </div>
       <InlineError message={action.error} onDismiss={action.clearError} />
       <div className="property-name-row">
-        <Field label="Name">
+        <Field label="Name" tip="The property's name, shown in the workspace logo, on receipts and booking pages, and in every email. Saving reloads the page.">
           <input value={value} maxLength={120} onChange={(event) => setValue(event.target.value)} placeholder="Houzzhills" />
         </Field>
         <button className="button-primary" disabled={action.busy || !value.trim() || value.trim() === name} onClick={() => void save()}>

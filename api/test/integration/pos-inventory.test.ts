@@ -44,6 +44,31 @@ describe.skipIf(!integration)("inventory, menu and restaurant POS", () => {
     expect((await app.inject({ method: "POST", url: `${M}/inventory/items`, headers: cashier.headers, payload: { name: "X" } })).statusCode).toBe(403);
   });
 
+  it("sets the counted quantity on hand from the item edit as an adjustment movement", async () => {
+    const created = await app.inject({ method: "POST", url: `${M}/inventory/items`, headers: manager.headers, payload: { name: "Milk", unit: "litre", quantity: 8, reorderLevel: 3 } });
+    const milk = created.json<{ item: { id: string } }>().item.id;
+    const edit = (payload: Record<string, unknown>, headers = manager.headers) => app.inject({ method: "PATCH", url: `${M}/inventory/items/${milk}`, headers, payload });
+
+    expect((await edit({ quantity: 5.25 })).json()).toMatchObject({ code: "REASON_REQUIRED" });
+    expect(await stockOf(milk)).toBe("8.000");
+    expect((await edit({ quantity: 5.25, quantityReason: "Weekly count", name: "Fresh milk" })).statusCode).toBe(200);
+    expect(await stockOf(milk)).toBe("5.250");
+    // Same figure again: nothing to record, so no reason is needed.
+    expect((await edit({ quantity: 5.25, reorderLevel: 2 })).statusCode).toBe(200);
+    expect((await edit({ quantity: -1, quantityReason: "x" })).statusCode).toBe(422);
+    expect((await edit({ quantity: 1, quantityReason: "x" }, cashier.headers)).statusCode).toBe(403);
+
+    const movements = await app.db.query("SELECT movement_type, quantity_delta::text, reason FROM stock_movements WHERE item_id = $1 ORDER BY created_at", [milk]);
+    expect(movements).toEqual([
+      { movement_type: "purchase", quantity_delta: "8.000", reason: "Opening stock" },
+      { movement_type: "adjustment", quantity_delta: "-2.750", reason: "Weekly count" },
+    ]);
+
+    expect((await edit({ active: false })).statusCode).toBe(200);
+    expect((await edit({ quantity: 9, quantityReason: "Recount" })).json()).toMatchObject({ code: "ITEM_ARCHIVED" });
+    expect(await stockOf(milk)).toBe("5.250");
+  });
+
   it("manages menu items with recipes, updates and archiving", async () => {
     const created = await app.inject({ method: "POST", url: `${M}/menu`, headers: manager.headers, payload: { name: "Breakfast", category: "Breakfast", priceKobo: 650_000, recipe: [{ itemId: eggs, quantity: 2 }] } });
     breakfast = created.json<{ item: { id: string } }>().item.id;

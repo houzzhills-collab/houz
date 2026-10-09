@@ -58,10 +58,10 @@ function SignIn({ property, setupRequired, onSignedIn }: { property: Property | 
         <h1>Welcome back</h1>
         <p className="auth-copy">Sign in to your property workspace.</p>
         {error && <div className="form-error">{error}</div>}
-        <Field label="Work email">
+        <Field label="Work email" tip="The email your manager used to create your workspace account.">
           <input name="email" type="email" autoComplete="username" required />
         </Field>
-        <Field label="Password">
+        <Field label="Password" tip="Your workspace password. On your first sign-in, use the temporary password you were given; you'll then choose your own.">
           <input name="password" type="password" autoComplete="current-password" required />
         </Field>
         <button className="button-primary auth-submit" disabled={busy}>
@@ -96,10 +96,10 @@ function PasswordDialog({ required, onClose, onChanged }: { required: boolean; o
         })
       }
     >
-      <Field label="Current password">
+      <Field label="Current password" tip="The password you signed in with, to confirm it's you.">
         <input name="currentPassword" type="password" autoComplete="current-password" required />
       </Field>
-      <Field label="New password (12+ characters)">
+      <Field label="New password (12+ characters)" tip="At least 12 characters. A short phrase of unrelated words is strong and easy to remember. Saving signs you out on your other devices.">
         <input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={256} required />
       </Field>
     </Modal>

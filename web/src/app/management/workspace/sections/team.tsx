@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Clock3, KeyRound, Pencil, Plus } from "lucide-react";
 import { api, errorMessage, type EmploymentStatus, type Role, type Staff } from "@/lib/api";
 import { dateLabel, dateTimeLabel, humanize, initials, optionLabel, text, timeLabel } from "../format";
-import { DetailList, Drawer, Empty, Field, InlineError, Modal, useAction, useConfirm, useResource, type SectionProps } from "../ui";
+import { DetailList, Drawer, Empty, Field, InlineError, Modal, Tip, useAction, useConfirm, useResource, type SectionProps } from "../ui";
 
 /** Shows a one-time temporary password; it cannot be retrieved again. */
 function PasswordReveal({ name, password, onClose }: { name: string; password: string; onClose: () => void }) {
@@ -64,7 +64,10 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
       <section className="panel bookings-panel full-panel">
         <div className="panel-heading bookings-heading">
           <div>
-            <h2>Team & attendance</h2>
+            <h2>
+              Team & attendance
+              <Tip text="Everyone with a workspace account: their role (what they can access), employment details and their most recent clock-in or clock-out." />
+            </h2>
             <p>Staff accounts, roles and latest clock event.</p>
           </div>
           <div className="heading-actions">
@@ -82,13 +85,13 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
             <table>
               <thead>
                 <tr>
-                  <th>STAFF MEMBER</th>
-                  <th>EMPLOYEE ID</th>
-                  <th>DEPARTMENT</th>
-                  <th>ROLE</th>
-                  <th>LAST EVENT</th>
-                  <th>EMPLOYMENT</th>
-                  {can("staff:write") && <th>MANAGE</th>}
+                  <th data-tip="The staff member's name and sign-in email.">STAFF MEMBER</th>
+                  <th data-tip="Their employee or payroll number.">EMPLOYEE ID</th>
+                  <th data-tip="The department they work in, e.g. Front desk, Restaurant.">DEPARTMENT</th>
+                  <th data-tip="What this person can see and do. Owner: everything, including settings and payment keys. Manager: everything except settings. Front desk: bookings, payments at the desk and rooms. Housekeeping: room cleaning status. Restaurant cashier: POS sales. Restaurant manager: POS, menu, stock and staff attendance. Storekeeper: stock. Finance: payments and reports (view only). Auditor: view-only access.">ROLE</th>
+                  <th data-tip="Their latest clock-in or clock-out and when it happened.">LAST EVENT</th>
+                  <th data-tip="Active: working and able to sign in. On leave or Terminated: the account is disabled and signed out everywhere until set back to Active.">EMPLOYMENT</th>
+                  {can("staff:write") && <th data-tip="Edit their details, reset their password or change their employment status.">MANAGE</th>}
                 </tr>
               </thead>
               <tbody>
@@ -153,7 +156,10 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
         <section className="panel operations-panel attendance-self">
           <div className="panel-heading">
             <div>
-              <h2>Your attendance</h2>
+              <h2>
+                Your attendance
+                <Tip text="Clock in when you start your shift and clock out when you finish. Managers see these times in the team list." />
+              </h2>
               <p>{clockedIn ? "You are clocked in." : "You are clocked out."}</p>
             </div>
           </div>
@@ -194,26 +200,26 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
           }
         >
           <div className="form-row">
-            <Field label="Full name">
+            <Field label="Full name" tip="The staff member's full name as it should appear in the workspace and audit records.">
               <input name="fullName" required maxLength={120} />
             </Field>
-            <Field label="Work email">
+            <Field label="Work email" tip="The email they sign in with. It must be unique and can't be changed from the edit form later.">
               <input name="email" type="email" required maxLength={254} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Employee number">
+            <Field label="Employee number" tip="Your internal employee or payroll number. Must be unique.">
               <input name="employeeNumber" required maxLength={40} />
             </Field>
-            <Field label="Department">
+            <Field label="Department" tip="The team they belong to, e.g. Front desk, Housekeeping, Restaurant. For records only; access comes from the role.">
               <input name="department" required maxLength={80} placeholder="Front desk" />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Job title">
+            <Field label="Job title" tip="Their position, e.g. Receptionist or Head Chef. For records only.">
               <input name="jobTitle" required maxLength={80} />
             </Field>
-            <Field label="Role">
+            <Field label="Role" tip="What this person can see and do. Owner: everything, including settings and payment keys. Manager: everything except settings. Front desk: bookings, payments at the desk and rooms. Housekeeping: room cleaning status. Restaurant cashier: POS sales. Restaurant manager: POS, menu, stock and staff attendance. Storekeeper: stock. Finance: payments and reports (view only). Auditor: view-only access.">
               <select name="role" required>
                 {reference.assignableRoles.map((role) => (
                   <option key={role.value} value={role.value}>
@@ -224,18 +230,21 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Phone">
+            <Field label="Phone" tip="Their phone number. Optional.">
               <input name="phone" type="tel" maxLength={32} />
             </Field>
-            <Field label="Emergency contact">
+            <Field label="Emergency contact" tip="Who to call in an emergency, with their relationship and number, e.g. “Ada Okafor (sister) 0803…”. Optional.">
               <input name="emergencyContact" maxLength={160} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Start date">
+            <Field label="Start date" tip="The date they started working here. Optional.">
               <input name="startDate" type="date" />
             </Field>
-            <Field label="Temporary password (optional, 12+ characters)">
+            <Field
+              label="Temporary password (optional, 12+ characters)"
+              tip="A one-time password to give them for their first sign-in. Leave it empty and a strong one is generated and shown once. They must choose their own password when they first sign in."
+            >
               <input name="temporaryPassword" type="password" minLength={12} maxLength={256} autoComplete="new-password" />
             </Field>
           </div>
@@ -283,24 +292,30 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
           <DetailList
             title="Employment"
             rows={[
-              ["Employee number", open.employee_number],
-              ["Department", open.department],
-              ["Job title", open.job_title],
-              ["Workspace role", optionLabel(reference.roles, open.role)],
-              ["Start date", open.start_date ? dateLabel(open.start_date) : null],
+              ["Employee number", open.employee_number, "Their employee or payroll number."],
+              ["Department", open.department, "The team they belong to."],
+              ["Job title", open.job_title, "Their position."],
+              ["Workspace role", optionLabel(reference.roles, open.role), "What this person can see and do. Owner: everything, including settings and payment keys. Manager: everything except settings. Front desk: bookings, payments at the desk and rooms. Housekeeping: room cleaning status. Restaurant cashier: POS sales. Restaurant manager: POS, menu, stock and staff attendance. Storekeeper: stock. Finance: payments and reports (view only). Auditor: view-only access."],
+              ["Start date", open.start_date ? dateLabel(open.start_date) : null, "When they started working here."],
             ]}
           />
           <DetailList
             title="Contact"
             rows={[
-              ["Work email", open.email],
-              ["Phone", open.phone],
-              ["Emergency contact", open.emergency_contact],
+              ["Work email", open.email, "The email they sign in with."],
+              ["Phone", open.phone, "Their phone number."],
+              ["Emergency contact", open.emergency_contact, "Who to call in an emergency."],
             ]}
           />
           <DetailList
             title="Attendance"
-            rows={[["Last clock event", open.last_attendance_event ? `${humanize(open.last_attendance_event)} · ${open.last_attendance_at ? dateTimeLabel(open.last_attendance_at) : ""}` : "No clock event yet"]]}
+            rows={[
+              [
+                "Last clock event",
+                open.last_attendance_event ? `${humanize(open.last_attendance_event)} · ${open.last_attendance_at ? dateTimeLabel(open.last_attendance_at) : ""}` : "No clock event yet",
+                "Their most recent clock-in or clock-out and when it happened.",
+              ],
+            ]}
           />
         </Drawer>
       )}
@@ -334,23 +349,23 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
           }
         >
           <div className="form-row">
-            <Field label="Full name">
+            <Field label="Full name" tip="The staff member's full name as it should appear in the workspace and audit records.">
               <input name="fullName" required maxLength={120} defaultValue={editing.full_name} />
             </Field>
-            <Field label="Employee number">
+            <Field label="Employee number" tip="Your internal employee or payroll number. Must be unique.">
               <input name="employeeNumber" required maxLength={40} defaultValue={editing.employee_number} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Department">
+            <Field label="Department" tip="The team they belong to, e.g. Front desk, Housekeeping, Restaurant. For records only; access comes from the role.">
               <input name="department" required maxLength={80} defaultValue={editing.department} />
             </Field>
-            <Field label="Job title">
+            <Field label="Job title" tip="Their position, e.g. Receptionist or Head Chef. For records only.">
               <input name="jobTitle" required maxLength={80} defaultValue={editing.job_title} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Workspace role">
+            <Field label="Workspace role" tip="What this person can see and do. Owner: everything, including settings and payment keys. Manager: everything except settings. Front desk: bookings, payments at the desk and rooms. Housekeeping: room cleaning status. Restaurant cashier: POS sales. Restaurant manager: POS, menu, stock and staff attendance. Storekeeper: stock. Finance: payments and reports (view only). Auditor: view-only access. Changing it signs them out so the new access applies at once.">
               <select name="role" defaultValue={editing.role}>
                 {!reference.assignableRoles.some((role) => role.value === editing.role) && <option value={editing.role}>{optionLabel(reference.roles, editing.role)}</option>}
                 {reference.assignableRoles.map((role) => (
@@ -360,15 +375,15 @@ export function TeamSection({ notify, refreshKey, can, reference, clockedIn, onC
                 ))}
               </select>
             </Field>
-            <Field label="Start date">
+            <Field label="Start date" tip="The date they started working here. Optional.">
               <input name="startDate" type="date" defaultValue={editing.start_date ?? ""} />
             </Field>
           </div>
           <div className="form-row">
-            <Field label="Phone">
+            <Field label="Phone" tip="Their phone number. Optional.">
               <input name="phone" type="tel" maxLength={32} pattern="[\+0-9 \(\)\-]*" defaultValue={editing.phone ?? ""} />
             </Field>
-            <Field label="Emergency contact">
+            <Field label="Emergency contact" tip="Who to call in an emergency, with their relationship and number, e.g. “Ada Okafor (sister) 0803…”. Optional.">
               <input name="emergencyContact" maxLength={160} defaultValue={editing.emergency_contact ?? ""} />
             </Field>
           </div>

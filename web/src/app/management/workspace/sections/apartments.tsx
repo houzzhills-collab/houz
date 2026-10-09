@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Archive, ArrowLeft, ArrowRight, ExternalLink, Eye, EyeOff, ImagePlus, Pencil, Plus, RotateCcw, Star, Trash2 } from "lucide-react";
 import { api, apiAssetUrl, errorMessage, type Apartment, type ApartmentStatus, type Reference } from "@/lib/api";
 import { dateLabel, money, optionLabel } from "../format";
-import { DetailList, Drawer, Empty, InlineError, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
+import { DetailList, Drawer, Empty, InlineError, Tip, useConfirm, useResource, type Notify, type SectionProps } from "../ui";
 
 const STATUS: Record<ApartmentStatus, { label: string; tone: string }> = {
   published: { label: "Published", tone: "status-green" },
@@ -87,6 +87,7 @@ export function PhotoManager({ apartment, editable, notify, onChanged, bare }: {
       {!bare && (
         <h3>
           Photos ({images.length} of {MAX_APARTMENT_PHOTOS})
+          <Tip text="Pictures on the website. The cover photo is the one on the listing card. Use the tools on each photo to set the cover, reorder or delete." />
         </h3>
       )}
       <div className="photo-grid">
@@ -135,17 +136,20 @@ function ApartmentBookings({ apartment, reference, refreshKey }: { apartment: Ap
   const list = bookings.data?.bookings ?? [];
   return (
     <section className="detail-section">
-      <h3>Bookings</h3>
+      <h3>
+        Bookings
+        <Tip text="The latest bookings for this apartment. Manage each one from Reservations." />
+      </h3>
       <InlineError message={bookings.error} />
       {list.length ? (
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>GUEST</th>
-                <th>STAY</th>
-                <th>TOTAL</th>
-                <th>STATUS</th>
+                <th data-tip="Who booked, and the booking reference.">GUEST</th>
+                <th data-tip="Check-in date — check-out date.">STAY</th>
+                <th data-tip="The full price of the stay.">TOTAL</th>
+                <th data-tip="Where the booking is: awaiting payment, confirmed, checked in, checked out, cancelled, no-show or expired.">STATUS</th>
               </tr>
             </thead>
             <tbody>
@@ -214,7 +218,10 @@ export function ApartmentsSection({ notify, refreshKey, can, reference, focus }:
     <section className="panel bookings-panel full-panel">
       <div className="panel-heading bookings-heading">
         <div>
-          <h2>Apartments</h2>
+          <h2>
+            Apartments
+            <Tip text="Shortlet apartments listed on the website. Only published apartments can be seen and booked by guests. Select one for its photos, details and bookings." />
+          </h2>
           <p>Listings on the website: details, photos, prices and bookings. Select one to manage it.</p>
         </div>
         <div className="heading-actions">
@@ -235,12 +242,12 @@ export function ApartmentsSection({ notify, refreshKey, can, reference, focus }:
           <table>
             <thead>
               <tr>
-                <th>APARTMENT</th>
-                <th>UNIT</th>
-                <th>RATE / NIGHT</th>
-                <th>SLEEPS</th>
-                <th>NOW</th>
-                <th>STATUS</th>
+                <th data-tip="The apartment's name, category and number of photos.">APARTMENT</th>
+                <th data-tip="The internal unit code staff use.">UNIT</th>
+                <th data-tip="The price per night for new bookings.">RATE / NIGHT</th>
+                <th data-tip="The most guests allowed.">SLEEPS</th>
+                <th data-tip="Who's staying now and until when, otherwise the next arrival date, or Free.">NOW</th>
+                <th data-tip="Published: live on the website and bookable. Draft: being prepared, hidden from guests. Archived: retired; bookings and history are kept.">STATUS</th>
               </tr>
             </thead>
             <tbody>
@@ -334,28 +341,28 @@ export function ApartmentsSection({ notify, refreshKey, can, reference, focus }:
           <DetailList
             title="Listing"
             rows={[
-              ["Summary", open.summary],
-              ["Description", open.description],
-              ["Web address", `/apartments/${open.slug}`],
+              ["Summary", open.summary, "The short line on the listing card."],
+              ["Description", open.description, "The full text on the apartment's page."],
+              ["Web address", `/apartments/${open.slug}`, "Where the apartment's page lives on the website."],
             ]}
           />
           <DetailList
             title="Price and capacity"
             rows={[
-              ["Nightly rate", open.pricing.nightlyRateKobo ? money(open.pricing.nightlyRateKobo) : null],
-              ["Caution fee", open.pricing.cautionFeeKobo ? money(open.pricing.cautionFeeKobo) : null],
-              ["Sleeps", String(open.capacity.maxGuests)],
-              ["Bedrooms · beds · bathrooms", `${open.capacity.bedrooms} · ${open.capacity.beds} · ${open.capacity.bathrooms}`],
-              ["Size", open.capacity.sizeSqm ? `${open.capacity.sizeSqm} sqm` : null],
-              ["Minimum stay", `${open.stayRules.minimumNights} night${open.stayRules.minimumNights === 1 ? "" : "s"}`],
-              ["Check-in / out", `From ${open.stayRules.checkInTime} · by ${open.stayRules.checkOutTime}`],
+              ["Nightly rate", open.pricing.nightlyRateKobo ? money(open.pricing.nightlyRateKobo) : null, "The price per night for new bookings."],
+              ["Caution fee", open.pricing.cautionFeeKobo ? money(open.pricing.cautionFeeKobo) : null, "A refundable security deposit, collected separately from the online payment."],
+              ["Sleeps", String(open.capacity.maxGuests), "The most guests allowed."],
+              ["Bedrooms · beds · bathrooms", `${open.capacity.bedrooms} · ${open.capacity.beds} · ${open.capacity.bathrooms}`, "Room counts shown on the listing."],
+              ["Size", open.capacity.sizeSqm ? `${open.capacity.sizeSqm} sqm` : null, "Floor area in square metres."],
+              ["Minimum stay", `${open.stayRules.minimumNights} night${open.stayRules.minimumNights === 1 ? "" : "s"}`, "Shorter bookings are refused."],
+              ["Check-in / out", `From ${open.stayRules.checkInTime} · by ${open.stayRules.checkOutTime}`, "Earliest arrival time and latest departure time."],
             ]}
           />
           <DetailList
             title="Location"
             rows={[
-              ["Address", [open.location.addressLine, open.location.area, open.location.city, open.location.state, open.location.country].filter(Boolean).join(", ")],
-              ["Directions", open.location.directions],
+              ["Address", [open.location.addressLine, open.location.area, open.location.city, open.location.state, open.location.country].filter(Boolean).join(", "), "Guests see only the area and city until they book."],
+              ["Directions", open.location.directions, "How to find the apartment. Sent to guests after they book."],
             ]}
           />
           {[
@@ -378,8 +385,8 @@ export function ApartmentsSection({ notify, refreshKey, can, reference, focus }:
           <DetailList
             title="Policies"
             rows={[
-              ["Cancellation", open.policies.cancellation],
-              ["Damage & caution fee", open.policies.warranty],
+              ["Cancellation", open.policies.cancellation, "What happens if a guest cancels."],
+              ["Damage & caution fee", open.policies.warranty, "How the caution fee works and what it covers."],
             ]}
           />
           {can("reservations:read") && <ApartmentBookings apartment={open} reference={reference} refreshKey={refreshKey} />}

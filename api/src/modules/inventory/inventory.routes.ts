@@ -151,7 +151,7 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
         tags: ["inventory"],
         summary: "Edit, archive or restore an inventory item",
         description:
-          "Quantity changes only through movements, so the ledger stays complete. `active: false` archives the item (refused while an active menu item's recipe uses it); its movement history is kept.",
+          "`quantity` sets the counted stock on hand: the difference is recorded as an adjustment movement with `quantityReason` (required when the quantity changes), so the ledger stays complete. Archived items cannot be counted. `active: false` archives the item (refused while an active menu item's recipe uses it); its movement history is kept.",
         security,
         params: IdParams,
         body: Type.Object(
@@ -162,6 +162,8 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
             reorderLevel: Type.Optional(Quantity({ minimum: 0 })),
             costKobo: Type.Optional(KoboInput),
             active: Type.Optional(Type.Boolean()),
+            quantity: Type.Optional(Quantity({ minimum: 0 })),
+            quantityReason: Type.Optional(Type.String({ maxLength: 300 })),
           },
           { additionalProperties: false, minProperties: 1 },
         ),
@@ -175,9 +177,11 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const unit = body.unit?.trim();
       if (name === "" || unit === "") throw Errors.unprocessable("Name and unit cannot be blank", "VALIDATION_FAILED");
       const reorderLevel = body.reorderLevel === undefined ? null : quantityText(body.reorderLevel, "reorderLevel");
+      const counted = body.quantity === undefined ? null : quantityText(body.quantity, "quantity");
+      const quantityReason = optionalText(body.quantityReason);
       return withTransaction(app.db, async (tx) => {
-        const item = await tx.maybeOne<{ name: string; active: boolean }>(
-          `SELECT name, active FROM inventory_items WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+        const item = await tx.maybeOne<{ name: string; active: boolean; quantity: string }>(
+          `SELECT name, active, quantity::text FROM inventory_items WHERE id = $1 AND property_id = $2 FOR UPDATE`,
           [request.params.id, principal.propertyId],
         );
         if (!item) throw Errors.notFound("Inventory item not found");
@@ -198,6 +202,38 @@ const inventoryRoutes: FastifyPluginAsyncTypebox = async (app) => {
             WHERE id = $1`,
           [request.params.id, name ?? null, body.sku !== undefined, optionalText(body.sku ?? undefined), unit ?? null, reorderLevel, body.costKobo ?? null, body.active ?? null],
         );
+        // A stock count: the new on-hand figure is applied as an adjustment movement for the difference.
+        const count =
+          counted === null
+            ? null
+            : await tx.maybeOne<{ delta: string; quantity: string; name: string; unit: string; reorder_level: string; crossed_low: boolean }>(
+                `UPDATE inventory_items i SET quantity = $2::numeric
+                  WHERE i.id = $1 AND i.quantity <> $2::numeric
+                  RETURNING ($2::numeric - $3::numeric)::text AS delta, i.quantity::text, i.name, i.unit, i.reorder_level::text,
+                            (i.active AND i.quantity <= i.reorder_level AND $3::numeric > i.reorder_level) AS crossed_low`,
+                [request.params.id, counted, item.quantity],
+              );
+        if (count) {
+          if (!item.active || body.active === false) throw Errors.conflict("Restore the item before changing its stock", "ITEM_ARCHIVED");
+          if (!quantityReason) throw Errors.unprocessable("Give a reason for changing the quantity on hand", "REASON_REQUIRED");
+          await tx.exec(
+            `INSERT INTO stock_movements(property_id, item_id, movement_type, quantity_delta, reason, recorded_by)
+             VALUES ($1, $2, 'adjustment', $3::numeric, $4, $5)`,
+            [principal.propertyId, request.params.id, count.delta, quantityReason, principal.userId],
+          );
+          await recordEvent(tx, {
+            propertyId: principal.propertyId,
+            actorId: principal.userId,
+            action: "inventory.adjust",
+            entityType: "inventory_item",
+            entityId: request.params.id,
+            details: { quantityDelta: count.delta, from: item.quantity, to: count.quantity, reason: quantityReason },
+            outbox: false,
+          });
+          if (count.crossed_low) {
+            await alertLowStock(tx, principal.propertyId, [{ name: count.name, unit: count.unit, quantity: count.quantity, reorderLevel: count.reorder_level }], "a stock count adjustment");
+          }
+        }
         await recordEvent(tx, {
           propertyId: principal.propertyId,
           actorId: principal.userId,
