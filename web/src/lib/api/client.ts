@@ -46,6 +46,8 @@ import type {
   Reference,
   PosOrder,
   Receipt,
+  Report,
+  ReportQuery,
   RecordPaymentInput,
   Reservation,
   ReservationStatus,
@@ -76,6 +78,10 @@ export interface ApiClient {
   };
   dashboard: {
     get(): Promise<Dashboard>;
+  };
+  reports: {
+    /** KPIs, the previous period's KPIs, a time series and breakdowns for a period. */
+    get(query: ReportQuery): Promise<Report>;
   };
   reservations: {
     /** Most recent stays; `q` searches guest name and reference on the server. */

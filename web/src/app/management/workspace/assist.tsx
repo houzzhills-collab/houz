@@ -54,6 +54,11 @@ export const REFERENCE: ReadonlyArray<{ title: string; body: string; keywords: s
     keywords: "reservation edit change dates room move extend",
   },
   {
+    title: "Reading the reports",
+    body: "Pick a period (today through all time, or a custom range); every figure is compared with the period before. Revenue is money settled. Occupancy is room-nights sold over room-nights available in the rooms in service today. ADR is the average price of an occupied night; RevPAR spreads it over every available night. Export CSV downloads the figures.",
+    keywords: "reports analytics revenue occupancy adr revpar metrics statistics export csv",
+  },
+  {
     title: "Live updates",
     body: "The green Live dot means changes made by anyone appear on your screen within a second. “Reconnecting” means updates are paused; the page catches up when the connection returns.",
     keywords: "live realtime refresh update reconnecting",

@@ -195,6 +195,85 @@ export type Dashboard = {
   serverTime: string;
 };
 
+// ---- Reports ----
+
+export type ReportRangeKey =
+  | "today"
+  | "yesterday"
+  | "this_week"
+  | "last_week"
+  | "last_7_days"
+  | "this_month"
+  | "last_month"
+  | "last_30_days"
+  | "last_60_days"
+  | "last_90_days"
+  | "last_120_days"
+  | "this_quarter"
+  | "last_quarter"
+  | "this_year"
+  | "last_year"
+  | "all_time"
+  | "custom";
+/** `from`/`to` (YYYY-MM-DD) apply to the custom range only. */
+export type ReportQuery = { range: ReportRangeKey; from?: string; to?: string };
+export type ReportSummary = {
+  total_revenue_kobo: string;
+  room_revenue_kobo: string;
+  restaurant_revenue_kobo: string;
+  room_payments: number;
+  bookings: number;
+  booked_value_kobo: string;
+  booked_nights: number;
+  cancelled: number;
+  no_shows: number;
+  abandoned_checkouts: number;
+  avg_stay_nights: number;
+  avg_lead_days: number;
+  nights_sold: number;
+  available_nights: number;
+  /** 0–1 */
+  occupancy: number;
+  stay_revenue_kobo: string;
+  adr_kobo: string;
+  revpar_kobo: string;
+  restaurant_orders: number;
+  avg_order_kobo: string;
+  voided_orders: number;
+  discounts_kobo: string;
+  new_guests: number;
+  outstanding_kobo: string;
+};
+export type ReportPoint = {
+  start: string;
+  end: string;
+  /** Hour of day (0–23) for single-day reports. */
+  hour?: number;
+  room_revenue_kobo: string;
+  restaurant_revenue_kobo: string;
+  bookings: number;
+  restaurant_orders: number;
+  nights_sold: number | null;
+  occupancy: number | null;
+};
+export type Report = {
+  range: { key: ReportRangeKey; from: string; to: string; days: number; granularity: "hour" | "day" | "week" | "month"; previous: { from: string; to: string } | null };
+  summary: ReportSummary;
+  previous: ReportSummary | null;
+  series: ReportPoint[];
+  breakdowns: {
+    payment_methods: { method: string; room_kobo: string; restaurant_kobo: string; count: number }[];
+    booking_sources: { source: string; bookings: number; value_kobo: string }[];
+    booking_statuses: { status: string; bookings: number }[];
+    room_types: { room_type: string; rooms: number; nights: number; revenue_kobo: string; occupancy: number; adr_kobo: string }[];
+    top_items: { name: string; quantity: number; revenue_kobo: string }[];
+    /** 1 = Monday … 7 = Sunday */
+    weekdays: { weekday: number; occupancy: number; nights: number }[];
+  };
+  rooms_in_service: number;
+  generatedAt: string;
+};
+
 export type Shift = { id: string; opening_float_kobo: string; opened_at: string };
 export type PosOrder = {
   id: string;

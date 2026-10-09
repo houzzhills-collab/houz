@@ -20,6 +20,11 @@ export function money(kobo: string | number | bigint | null | undefined): string
   return moneyFormat.format(Number(kobo ?? 0) / 100);
 }
 
+/** Short money for chart axes, e.g. ₦1.2M. */
+export function compactMoney(kobo: number): string {
+  return new Intl.NumberFormat("en-NG", { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 }).format(kobo / 100);
+}
+
 /** The API's label for a value, falling back to a readable form of the value itself. */
 export function optionLabel(options: readonly Option[], value: string): string {
   return options.find((option) => option.value === value)?.label ?? humanize(value);

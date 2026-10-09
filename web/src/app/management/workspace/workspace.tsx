@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, BedDouble, Building2, CalendarDays, Check, Clock3, Coffee, CreditCard, HelpCircle, KeyRound, LayoutDashboard, LogOut, Menu, Search, Settings2, Users, Utensils, X } from "lucide-react";
+import { ArrowRight, BedDouble, ChartColumn, Building2, CalendarDays, Check, Clock3, Coffee, CreditCard, HelpCircle, KeyRound, LayoutDashboard, LogOut, Menu, Search, Settings2, Users, Utensils, X } from "lucide-react";
 import { api, errorMessage, type Permission, type Property, type Reference, type User } from "@/lib/api";
 import { applyProperty, initials, longDateLabel, optionLabel, propertyHour, text } from "./format";
 import { CommandPalette, Tour, tourSeen, type Focus, type PaletteAction, type TourStep } from "./assist";
@@ -13,6 +13,7 @@ import { InventorySection } from "./sections/inventory";
 import { OverviewSection } from "./sections/overview";
 import { PaymentsSection } from "./sections/payments";
 import { PosSection } from "./sections/pos";
+import { ReportsSection } from "./sections/reports";
 import { ReservationsSection } from "./sections/reservations";
 import { RoomsSection } from "./sections/rooms";
 import { SettingsSection } from "./sections/settings";
@@ -20,6 +21,7 @@ import { TeamSection } from "./sections/team";
 
 const NAVIGATION: ReadonlyArray<{ label: string; icon: typeof LayoutDashboard; permission: Permission; description: string }> = [
   { label: "Overview", icon: LayoutDashboard, permission: "dashboard:read", description: "Here’s what’s happening across your property today." },
+  { label: "Reports", icon: ChartColumn, permission: "reports:read", description: "Revenue, occupancy, bookings and restaurant performance over any period, compared with the period before." },
   { label: "Reservations", icon: CalendarDays, permission: "reservations:read", description: "Stays, arrivals, departures and guest payments." },
   { label: "Payments", icon: CreditCard, permission: "payments:read", description: "The payment register, transfer confirmation and exceptions." },
   { label: "Apartments", icon: Building2, permission: "rooms:read", description: "Website listings: details, photos, prices, publishing and bookings." },
@@ -465,6 +467,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
           </div>
           {page && (user.permissions.includes(page.permission) ? page.render(sectionProps) : <div className="empty-state">You don&apos;t have access to this page.</div>)}
           {!page && current?.label === "Overview" && <OverviewSection {...sectionProps} onOpen={(section) => go({ section })} />}
+          {!page && current?.label === "Reports" && <ReportsSection key={sectionKey} {...sectionProps} />}
           {!page && current?.label === "Reservations" && <ReservationsSection key={sectionKey} {...sectionProps} />}
           {!page && current?.label === "Payments" && <PaymentsSection key={sectionKey} {...sectionProps} />}
           {!page && current?.label === "Apartments" && <ApartmentsSection key={sectionKey} {...sectionProps} />}

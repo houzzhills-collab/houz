@@ -25,6 +25,7 @@ import type {
   PublicPaymentStatus,
   Receipt,
   Reference,
+  Report,
   Reservation,
   Room,
   RoomHistoryEntry,
@@ -250,6 +251,13 @@ export function createHttpClient(baseUrl: string): ApiClient {
 
     dashboard: {
       get: () => request<Dashboard>("GET", "/management/dashboard"),
+    },
+
+    reports: {
+      get(query) {
+        const params = new URLSearchParams({ range: query.range, ...(query.range === "custom" && query.from && query.to ? { from: query.from, to: query.to } : {}) });
+        return request<Report>("GET", `/management/reports?${params.toString()}`);
+      },
     },
 
     reservations: {

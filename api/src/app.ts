@@ -9,6 +9,7 @@ import guestBookingRoutes from "./modules/public/guest-bookings.routes.js";
 import attendanceRoutes from "./modules/attendance/attendance.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
+import reportRoutes from "./modules/reports/reports.routes.js";
 import eventRoutes from "./modules/events/events.routes.js";
 import healthRoutes from "./modules/health/health.routes.js";
 import inventoryRoutes from "./modules/inventory/inventory.routes.js";
@@ -129,6 +130,7 @@ export function buildApp(config: AppConfig) {
       await api.register(
         async (management) => {
           await management.register(dashboardRoutes, { prefix: "/dashboard" });
+          await management.register(reportRoutes, { prefix: "/reports" });
           await management.register(eventRoutes, { prefix: "/events" });
           await management.register(reservationRoutes, { prefix: "/reservations" });
           await management.register(paymentRoutes, { prefix: "/payments" });
