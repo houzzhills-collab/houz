@@ -53,9 +53,7 @@ function PaymentResult() {
   return (
     <div className="management-auth-shell">
       <div className="auth-card">
-        <div className="brand-mark">
-          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-        </div>
+        <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="mx-auto mb-4 h-auto w-40" />
         {property && <p className="auth-eyebrow">{property.name.toUpperCase()}</p>}
         {confirmed ? (
           <>

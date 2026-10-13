@@ -39,9 +39,7 @@ export default function SetupPage() {
   return (
     <div className="management-auth-shell">
       <div className="auth-card setup-card">
-        <div className="brand-mark">
-          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-        </div>
+        <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="mx-auto mb-4 h-auto w-40" />
         {done ? (
           <>
             <ShieldCheck size={34} className="setup-success" />

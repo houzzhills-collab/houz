@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: { default: "Houzz Hills Operations", template: "%s | Houzz Hills" },
   description: "Property operations workspace and online booking.",
   robots: { index: false, follow: false },
-  icons: { icon: "/images/houzzhills-logo.png", apple: "/images/houzzhills-logo.png" },
+  icons: { icon: "/images/houzzhills-logo.svg", apple: "/images/houzzhills-logo.svg" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -6,12 +6,8 @@ import MobileMenu from "@/components/MobileMenu";
 export default function SiteNav({ base = "" }: { base?: "" | "/" }) {
   return (
     <nav className="relative z-50 mx-auto flex w-full min-w-0 max-w-7xl items-center justify-between px-4 py-6 sm:px-6 lg:px-10">
-      <Link href="/" className="flex items-center gap-3">
-        <Image src="/images/houzzhills-mark.svg" alt="" width={850} height={375} className="h-10 w-12 object-contain" />
-        <span>
-          <b className="block font-serif text-lg tracking-tight">Houzzhills</b>
-          <small className="block text-[10px] uppercase tracking-[.25em] text-[#c8d3cd]">Apartments · Kaduna</small>
-        </span>
+      <Link href="/" aria-label="Houzz Hills Apartments home" className="flex items-center">
+        <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="h-auto w-[118px] sm:w-[145px] lg:w-[175px]" />
       </Link>
       <div className="hidden items-center gap-8 text-[15px] text-[#d1dbd5] md:flex">
         <a href={`${base}#apartments`} className="hover:text-white">Apartments</a>

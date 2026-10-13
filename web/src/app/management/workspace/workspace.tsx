@@ -54,9 +54,7 @@ function SignIn({ property, setupRequired, onSignedIn }: { property: Property | 
   return (
     <div className="management-auth-shell">
       <form className="auth-card" onSubmit={(event) => void submit(event)}>
-        <div className="brand-mark">
-          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-        </div>
+        <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="mx-auto mb-4 h-auto w-40" />
         {property && <p className="auth-eyebrow">{property.name.toUpperCase()}</p>}
         <h1>Welcome back</h1>
         <p className="auth-copy">Sign in to your property workspace.</p>
@@ -326,9 +324,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
     return (
       <div className="management-auth-shell">
         <div className="auth-card">
-          <div className="brand-mark">
-            <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-          </div>
+          <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="mx-auto mb-4 h-auto w-40" />
           <strong>Connecting…</strong>
         </div>
       </div>
@@ -338,9 +334,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
     return (
       <div className="management-auth-shell">
         <div className="auth-card">
-          <div className="brand-mark">
-            <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-          </div>
+          <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="mx-auto mb-4 h-auto w-40" />
           <div className="form-error">The service is not reachable right now. Check your connection and try again.</div>
           <button className="button-primary auth-submit" onClick={() => window.location.reload()}>
             Retry
@@ -390,11 +384,8 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
     <div className="management-shell">
       <aside className={`management-sidebar ${menuOpen ? "is-open" : ""}`}>
         <div className="management-brand">
-          <div className="brand-mark">
-            <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-          </div>
+          <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="h-auto w-[150px]" />
           <div>
-            <strong>{property.name.toUpperCase()}</strong>
             <small>PROPERTY OPERATIONS</small>
           </div>
           <button className="mobile-close" aria-label="Close menu" onClick={() => setMenuOpen(false)}>

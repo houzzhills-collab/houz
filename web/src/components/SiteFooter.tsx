@@ -7,7 +7,7 @@ export default function SiteFooter({ base = "" }: { base?: "" | "/" }) {
       <div className="mx-auto flex max-w-7xl flex-col justify-between gap-8 px-6 py-10 md:flex-row md:items-end lg:px-10">
         <div>
           <Link href="/" aria-label="Houzz Hills home" className="inline-flex rounded-xl bg-[#263b34] p-1">
-            <Image src="/images/houzzhills-lockup.svg" alt="Houzz Hills Apartments" width={990} height={680} className="h-[112px] w-[164px] object-contain" />
+            <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="h-auto w-[150px]" />
           </Link>
           <p className="mt-2 text-[13px] text-stone-500">Serviced apartments, thoughtfully finished.</p>
         </div>

@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Houzzhills | Serviced Apartments in Kaduna",
   description: "Thoughtful serviced apartments for long weekends, longer stays, and everything in between.",
-  icons: { icon: "/images/houzzhills-logo.png", apple: "/images/houzzhills-logo.png" },
+  icons: { icon: "/images/houzzhills-logo.svg", apple: "/images/houzzhills-logo.svg" },
 };
 
 export const viewport: Viewport = {

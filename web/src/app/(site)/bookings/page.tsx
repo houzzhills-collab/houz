@@ -410,7 +410,7 @@ function Receipt({ booking, busy, onPay, onBack, backLabel }: { booking: GuestBo
       <Card className="print:border-0 print:shadow-none">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#efeadf] pb-6">
           <div>
-            <Image src="/images/houzzhills-lockup.svg" alt="Houzz Hills Apartments" width={990} height={680} className="h-[82px] w-[120px] object-contain print:h-[82px] print:w-[120px]" />
+            <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="h-auto w-[140px]" />
             <p className="mt-1 text-xs uppercase tracking-[.22em] text-stone-500">Booking receipt</p>
           </div>
           <div className="text-right">

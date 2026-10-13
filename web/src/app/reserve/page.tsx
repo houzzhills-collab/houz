@@ -97,13 +97,7 @@ export default function ReservePage() {
   return (
     <div className="public-shell">
       <header className="public-header">
-        <div className="brand-mark">
-          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
-        </div>
-        <div>
-          <strong>{property?.name ?? ""}</strong>
-          <small>Book online</small>
-        </div>
+        <Image src="/images/houzzhills-logo.svg" alt="Houzz Hills Apartments" width={904} height={784} className="h-auto w-[145px]" />
       </header>
       <main className="public-main">
         <h1>Book your stay</h1>
