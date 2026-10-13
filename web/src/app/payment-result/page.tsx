@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { api, errorMessage, type Property, type PublicPaymentStatus } from "@/lib/api";
@@ -53,7 +54,7 @@ function PaymentResult() {
     <div className="management-auth-shell">
       <div className="auth-card">
         <div className="brand-mark">
-          H<span>.</span>
+          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
         </div>
         {property && <p className="auth-eyebrow">{property.name.toUpperCase()}</p>}
         {confirmed ? (

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { api, errorMessage } from "@/lib/api";
 
 const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL ?? "https://houzzhills.com";
@@ -39,7 +40,7 @@ export default function SetupPage() {
     <div className="management-auth-shell">
       <div className="auth-card setup-card">
         <div className="brand-mark">
-          H<span>.</span>
+          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
         </div>
         {done ? (
           <>

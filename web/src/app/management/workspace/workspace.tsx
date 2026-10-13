@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowRight, BedDouble, ChartColumn, Building2, CalendarDays, Check, Clock3, Coffee, CreditCard, HelpCircle, KeyRound, LayoutDashboard, LogOut, Menu, Search, Settings2, Users, Utensils, X } from "lucide-react";
 import { api, errorMessage, type Permission, type Property, type Reference, type StaySummary, type User } from "@/lib/api";
@@ -54,7 +55,7 @@ function SignIn({ property, setupRequired, onSignedIn }: { property: Property | 
     <div className="management-auth-shell">
       <form className="auth-card" onSubmit={(event) => void submit(event)}>
         <div className="brand-mark">
-          H<span>.</span>
+          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
         </div>
         {property && <p className="auth-eyebrow">{property.name.toUpperCase()}</p>}
         <h1>Welcome back</h1>
@@ -326,7 +327,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
       <div className="management-auth-shell">
         <div className="auth-card">
           <div className="brand-mark">
-            H<span>.</span>
+            <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
           </div>
           <strong>Connecting…</strong>
         </div>
@@ -338,7 +339,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
       <div className="management-auth-shell">
         <div className="auth-card">
           <div className="brand-mark">
-            H<span>.</span>
+            <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
           </div>
           <div className="form-error">The service is not reachable right now. Check your connection and try again.</div>
           <button className="button-primary auth-submit" onClick={() => window.location.reload()}>
@@ -390,7 +391,7 @@ export function Workspace({ page }: { page?: WorkspacePage } = {}) {
       <aside className={`management-sidebar ${menuOpen ? "is-open" : ""}`}>
         <div className="management-brand">
           <div className="brand-mark">
-            H<span>.</span>
+            <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
           </div>
           <div>
             <strong>{property.name.toUpperCase()}</strong>

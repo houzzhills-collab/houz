@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, BedDouble, CalendarDays, Users } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { api, errorMessage, type AvailableRoomType, type PaymentOption, type Property } from "@/lib/api";
 import { bookingHref, plural, rememberBooking } from "@/components/site";
 import { applyProperty, money, propertyDate } from "../management/workspace/format";
@@ -97,7 +98,7 @@ export default function ReservePage() {
     <div className="public-shell">
       <header className="public-header">
         <div className="brand-mark">
-          H<span>.</span>
+          <Image src="/images/houzzhills-icon.svg" alt="" width={550} height={550} className="h-full w-full rounded-[8px] object-cover" />
         </div>
         <div>
           <strong>{property?.name ?? ""}</strong>
