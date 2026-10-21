@@ -3,7 +3,7 @@ import "./site.css";
 
 export const metadata: Metadata = {
   title: { absolute: "Houzzhills | Serviced Apartments in Kaduna" },
-  description: "Thoughtful serviced apartments for long weekends, longer stays, and everything in between.",
+  description: "Thoughtfully furnished serviced apartments for business trips, family visits and extended stays. Enjoy the privacy of your own space, with attentive support throughout your stay.",
   robots: { index: true, follow: true },
 };
 
