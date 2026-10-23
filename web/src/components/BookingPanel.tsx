@@ -114,8 +114,8 @@ export default function BookingPanel({
   return (
     <div id="book" className="scroll-mt-6 rounded-[28px] border border-[#e6dfd2] bg-white p-6 shadow-[0_18px_40px_rgb(38_59_52/8%)]">
       <p>
+        <span className="text-[15px] text-stone-500">Starting at: </span>
         <b className="font-serif text-3xl text-[#263b34]">{money(pricing.nightlyRateKobo)}</b>
-        <span className="text-[15px] text-stone-500"> / night</span>
       </p>
 
       <form onSubmit={(event) => void checkAvailability(event)} className="mt-6">

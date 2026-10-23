@@ -106,9 +106,8 @@ export default function ApartmentsSection() {
                   <div className="absolute right-5 top-5 rounded-full bg-white/15 px-3 py-1.5 text-xs text-white backdrop-blur-md">{apartment.category}</div>
                   <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between text-white">
                     <div>
-                      <p className="text-[13px] text-white/75">From</p>
+                      <p className="text-[13px] text-white/75">Starting at:</p>
                       <b className="font-serif text-2xl">{money(apartment.pricing.nightlyRateKobo)}</b>
-                      <span className="text-[13px] text-white/75"> / night</span>
                     </div>
                     <span className="apartment-card-arrow grid h-10 w-10 place-items-center rounded-full bg-white text-[#263b34]">
                       <ArrowUpRight size={17} />

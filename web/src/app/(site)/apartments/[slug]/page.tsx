@@ -177,8 +177,8 @@ function ApartmentPage() {
 
           <div className="sticky bottom-0 z-40 flex items-center justify-between gap-4 border-t border-[#e6dfd2] bg-[#f8f6f1]/95 px-6 py-4 backdrop-blur-md lg:hidden">
             <p>
+              <span className="text-[13px] text-stone-500">Starting at: </span>
               <b className="font-serif text-xl text-[#263b34]">{money(apartment.pricing.nightlyRateKobo)}</b>
-              <span className="text-[13px] text-stone-500"> / night</span>
             </p>
             <a href="#book" className="inline-flex items-center gap-2 rounded-full bg-[#263b34] px-5 py-3 text-[15px] font-semibold text-white">
               Check availability <ArrowUpRight size={15} />
